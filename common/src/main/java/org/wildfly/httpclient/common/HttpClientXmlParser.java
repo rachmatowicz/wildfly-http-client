@@ -37,6 +37,14 @@ final class HttpClientXmlParser {
     private static final String NS_EJB_HTTP_CLIENT = "urn:wildfly-http-client:1.0";
 
     static WildflyHttpContext parseHttpContext() throws ConfigXMLParseException, IOException {
+        String value = System.getProperty("wildfly.config.url");
+        if (value == null) {
+            System.out.println("HttpClientXmlParser: value == null");
+        } else if (value.isEmpty()) {
+            System.out.println("HttpClientXmlParser: value == ''");
+        } else {
+            System.out.println("HttpClientXmlParser: value == " + value);
+        }
         final ClientConfiguration clientConfiguration = ClientConfiguration.getInstance();
         final WildflyHttpContext.Builder builder = new WildflyHttpContext.Builder();
         if (clientConfiguration != null) {
