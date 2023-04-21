@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!--
+  ~ JBoss, Home of Professional Open Source.
+  ~ Copyright 2017 Red Hat, Inc., and individual contributors
+  ~ as indicated by the @author tags.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~       http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+  -->
+
+<configuration >
+    <http-client xmlns="urn:wildfly-http-client:1.0">
+        <defaults>
+            <eagerly-acquire-session value="true"/>
+            <enable-http2 value="true" />
+        </defaults>
+    </http-client>
+    <discovery xmlns="urn:wildfly-discovery:1.0">
+        <discovery-provider>
+            <static>
+                <service uri="http://localhost:7788/wildfly-services" abstract-type="ejb" abstract-type-authority="jboss" >
+                        <attribute name="ejb-module" value="wildfly-app/wildfly-ejb-remote-server-side" />
+                </service>
+            </static>
+        </discovery-provider>
+    </discovery>
+    <authentication-client xmlns="urn:elytron:1.0">
+        <authentication-rules>
+            <rule use-configuration="administrator">
+                <match-protocol name="http" />
+            </rule>
+        </authentication-rules>
+        <authentication-configurations>
+            <configuration name="administrator">
+                <set-user-name name="administrator" />
+                <credentials>
+                    <clear-password password="password1!" />
+                </credentials>
+                <set-mechanism-realm name="ManagementRealm" />
+            </configuration>
+        </authentication-configurations>
+        <key-stores>
+            <key-store name="client-keys" type="JKS">
+                <resource name="client.keystore"/>
+            </key-store>
+            <key-store name="client-trust" type="JKS">
+                <resource name="client.truststore" />
+            </key-store>
+        </key-stores>
+        <ssl-contexts>
+            <ssl-context name="client-ssl">
+                <trust-store key-store-name="client-trust"/>
+                <key-store-ssl-certificate key-store-name="client-keys" alias="client">
+                    <key-store-clear-password password="password"/>
+                </key-store-ssl-certificate>
+            </ssl-context>
+        </ssl-contexts>
+        <ssl-context-rules>
+            <rule use-ssl-context="client-ssl">
+                <match-protocol name="https" />
+            </rule>
+        </ssl-context-rules>
+    </authentication-client>
+</configuration>

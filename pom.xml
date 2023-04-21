@@ -75,6 +75,17 @@
         <version.org.kohsuke.metainf-services>1.7</version.org.kohsuke.metainf-services>
         <version.org.wildfly.extras.batavia>1.0.11.Final</version.org.wildfly.extras.batavia>
     </properties>
+    <dependencies>
+        <dependency>
+            <groupId>io.undertow</groupId>
+            <artifactId>undertow-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+        </dependency>
+    </dependencies>
 
     <modules>
         <module>common</module>
@@ -101,6 +112,7 @@
                 <version>${version.org.jboss.logging-tools}</version>
             </dependency>
 
+            <!-- ejb client implementations (javax, jakarta) -->
             <dependency>
                 <groupId>org.jboss</groupId>
                 <artifactId>jboss-ejb-client</artifactId>
@@ -130,6 +142,7 @@
                 <version>${version.org.wildfly.discovery}</version>
             </dependency>
 
+            <!-- ejb spec apis -->
             <dependency>
                 <groupId>org.jboss.spec.javax.ejb</groupId>
                 <artifactId>jboss-ejb-api_3.2_spec</artifactId>
@@ -141,6 +154,7 @@
                 <version>${version.jakarta.ejb.jakarta-ejb-api}</version>
             </dependency>
 
+            <!-- transaction spec apis -->
             <dependency>
                 <groupId>org.jboss.spec.javax.transaction</groupId>
                 <artifactId>jboss-transaction-api_1.3_spec</artifactId>
@@ -156,6 +170,18 @@
                         <artifactId>*</artifactId>
                     </exclusion>
                 </exclusions>
+            </dependency>
+
+            <!-- this project's wildfly-http-client jars for ejb, naming and transactions -->
+            <dependency>
+                <groupId>org.wildfly.wildfly-http-client</groupId>
+                <artifactId>wildfly-http-ejb-client</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.wildfly.wildfly-http-client</groupId>
+                <artifactId>wildfly-http-ejb-client-jakarta</artifactId>
+                <version>${project.version}</version>
             </dependency>
 
             <dependency>
@@ -180,6 +206,7 @@
                 <version>${project.version}</version>
             </dependency>
 
+            <!--needed by ejb, naming and transactions modules when testing -->
             <dependency>
                 <groupId>org.wildfly.wildfly-http-client</groupId>
                 <artifactId>wildfly-http-client-common</artifactId>
@@ -188,6 +215,30 @@
                 <scope>test</scope>
             </dependency>
 
+            <!-- needed by ee-interop-tests -->
+            <dependency>
+                <groupId>org.wildfly.wildfly-http-client</groupId>
+                <artifactId>wildfly-http-ejb-client</artifactId>
+                <version>${project.version}</version>
+                <type>test-jar</type>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.wildfly.wildfly-http-client</groupId>
+                <artifactId>wildfly-http-transaction-client</artifactId>
+                <version>${project.version}</version>
+                <type>test-jar</type>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.wildfly.wildfly-http-client</groupId>
+                <artifactId>wildfly-http-naming-client</artifactId>
+                <version>${project.version}</version>
+                <type>test-jar</type>
+                <scope>test</scope>
+            </dependency>
+
+            <!-- transaction client implementations (javax, jakarta)-->
             <dependency>
                 <groupId>org.wildfly.transaction</groupId>
                 <artifactId>wildfly-transaction-client</artifactId>
@@ -238,6 +289,7 @@
                 <version>${version.org.jboss.threads}</version>
             </dependency>
 
+            <!-- naming client implementation -->
             <dependency>
                 <groupId>org.wildfly</groupId>
                 <artifactId>wildfly-naming-client</artifactId>
@@ -253,6 +305,8 @@
                 <artifactId>wildfly-client-config</artifactId>
                 <version>${version.org.wildfly.client-config}</version>
             </dependency>
+
+            <!-- elytron implementations -->
             <dependency>
                 <groupId>org.wildfly.security</groupId>
                 <artifactId>wildfly-elytron-auth</artifactId>
@@ -469,5 +523,11 @@
             </modules>
         </profile>
 
+        <profile>
+            <id>ee-interop-tests</id>
+            <modules>
+                <module>ee-interoperability-tests</module>
+            </modules>
+        </profile>
     </profiles>
 </project>
