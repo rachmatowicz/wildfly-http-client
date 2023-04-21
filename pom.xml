@@ -32,6 +32,9 @@
     <artifactId>wildfly-http-client-parent</artifactId>
     <version>2.0.2.Final</version>
     <name>Wildfly HTTP Client Parent - Jakarta EE Variant</name>
+    <modules>
+        <module>ee-interoperability-tests/ee-interoperability-common</module>
+    </modules>
     <packaging>pom</packaging>
 
     <licenses>
@@ -71,12 +74,14 @@
         <version.org.kohsuke.metainf-services>1.7</version.org.kohsuke.metainf-services>
     </properties>
 
+    <!--
     <modules>
         <module>common</module>
         <module>ejb</module>
         <module>naming</module>
         <module>transaction</module>
     </modules>
+    -->
 
     <dependencyManagement>
         <dependencies>
@@ -400,6 +405,20 @@
     </build>
 
     <profiles>
+
+        <profile>
+            <id>ee-interop-tests</id>
+            <activation>
+                <property>
+                    <name>ee-interop-tests</name>
+                    <value>true</value>
+                </property>
+            </activation>
+            <modules>
+                <module>ee-interoperability-tests</module>
+            </modules>
+        </profile>
+
         <profile>
             <id>docs</id>
             <modules>

@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.wildfly.wildfly-http-client</groupId>
+        <artifactId>ee-interoperability-tests</artifactId>
+        <version>2.0.2.Final</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>ee-interoperability-tests-legacy2current</artifactId>
+    <name>Wildfly HTTP Client - Legacy to Current Interoperability Tests</name>
+
+    <properties>
+        <maven.compiler.source>11</maven.compiler.source>
+        <maven.compiler.target>11</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+
+    <!-- client side needs JUnit; server side needs the integration tests -->
+    <dependencies>
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <scope>test</scope>
+        </dependency>
+         <dependency>
+            <groupId>io.undertow</groupId>
+            <artifactId>undertow-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.wildfly.wildfly-http-client</groupId>
+            <artifactId>ee-interoperability-common</artifactId>
+            <classifier>integration-tests</classifier>
+            <version>1.1.13.Final</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>default-test</id>
+                        <phase>none</phase>
+                        <goals>
+                            <goal>test</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <executions>
+                    <!-- run the integration tests -->
+                    <execution>
+                        <id>ee-interop-tests</id>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                        <configuration>
+                            <systemProperties>
+                                <org.wildfly.ee.namespace.interop>false</org.wildfly.ee.namespace.interop>
+                            </systemProperties>
+                            <excludes>
+                                <exclude>**/EEInteropLegacy2*</exclude>
+                            </excludes>
+                            <dependenciesToScan>
+                                <dependency>org.wildfly.wildfly-http-client:ee-interoperability-common</dependency>
+                            </dependenciesToScan>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <configuration>
+                    <systemProperties>
+                        <org.wildfly.ee.namespace.interop>false</org.wildfly.ee.namespace.interop>
+                    </systemProperties>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>pre-integration-execution</id>
+                        <phase>pre-integration-test</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <classpathScope>test</classpathScope>
+                            <executable>bash</executable>
+                            <arguments>
+                                <argument>${project.build.scriptSourceDirectory}/startUndertow.sh</argument>
+                                <classpath/>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>post-integration-execution</id>
+                        <phase>post-integration-test</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <classpathScope>test</classpathScope>
+                            <executable>bash</executable>
+                            <arguments>
+                                <argument>${project.build.scriptSourceDirectory}/stopUndertow.sh</argument>
+                                <classpath/>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
