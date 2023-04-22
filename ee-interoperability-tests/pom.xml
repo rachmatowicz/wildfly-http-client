@@ -21,6 +21,7 @@
     <modules>
         <module>ee-interoperability-common</module>
         <module>ee-interoperability-legacy2current</module>
+        <module>ee-interoperability-current2legacy</module>
     </modules>
 
     <!-- any dependencies added to the parent will be inherited by the children -->

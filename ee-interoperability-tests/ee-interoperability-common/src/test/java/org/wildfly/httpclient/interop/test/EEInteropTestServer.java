@@ -18,7 +18,7 @@ public class EEInteropTestServer {
                     @Override
                     public void handleRequest(final HttpServerExchange exchange) throws Exception {
                         exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, "text/plain");
-                        exchange.getResponseSender().send("Hello World from EEInteropTestSErver (2.0.2.Final)");
+                        exchange.getResponseSender().send("Hello World from EEInteropTestServer (2.0.2.Final)");
                     }
                 }).build();
         undertow.start();

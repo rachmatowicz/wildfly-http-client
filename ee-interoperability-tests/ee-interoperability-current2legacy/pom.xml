@@ -3,19 +3,18 @@
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
+
     <parent>
         <groupId>org.wildfly.wildfly-http-client</groupId>
-        <artifactId>wildfly-http-client-parent</artifactId>
+        <artifactId>ee-interoperability-tests</artifactId>
         <version>2.0.2.Final</version>
-        <relativePath>../../pom.xml</relativePath>
+        <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>ee-interoperability-legacy2current</artifactId>
-    <name>Wildfly HTTP Client - EE Interoperability Tests - Legacy To Current</name>
+    <artifactId>ee-interoperability-current2legacy</artifactId>
+    <name>Wildfly HTTP Client - EE Interoperability Tests - Current to Legacy</name>
     <description>
-        Module used to test interaction between a legacy version client and a current version server.
-        The legacy version client test case is executed using the failsafe plugin scanForDependencies option
-        which allows scanning a GAV on the classpath for test cases to execute.
+        Module used to test interaction between a current version client and a legacy version server.
     </description>
 
     <properties>
@@ -74,10 +73,7 @@
                             <systemProperties>
                                 <org.wildfly.ee.namespace.interop>false</org.wildfly.ee.namespace.interop>
                             </systemProperties>
-                            <!-- we execute the legacy tests by scanning the dependency on the classpath for integration tests -->
-                            <dependenciesToScan>
-                                <dependency>org.wildfly.wildfly-http-client:ee-interoperability-common</dependency>
-                            </dependenciesToScan>
+                            <!-- we pick up the current integration tests by default -->
                         </configuration>
                     </execution>
                 </executions>
@@ -98,7 +94,6 @@
                             <goal>exec</goal>
                         </goals>
                         <configuration>
-                            <!-- this needs to have the current common on the classpath -->
                             <classpathScope>test</classpathScope>
                             <executable>bash</executable>
                             <arguments>

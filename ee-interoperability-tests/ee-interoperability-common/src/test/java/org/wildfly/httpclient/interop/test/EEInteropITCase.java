@@ -8,6 +8,13 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 
+/**
+ * This test case represents a legacy version test case running against a current version server
+ * for a current version greater than the version of this project. It will be executed using the fallsafe
+ * plugin option dependenciesToScan, which allows executing test classes from a dependency.
+ *
+ * @author Richard Achmatowicz
+ */
 public class EEInteropITCase {
     @Test
     public void testLegacy2CurrentInteroperation() {

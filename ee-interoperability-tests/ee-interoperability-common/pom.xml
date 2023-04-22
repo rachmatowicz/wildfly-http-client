@@ -13,6 +13,9 @@
 
     <artifactId>ee-interoperability-common</artifactId>
     <name>Wildfly HTTP Client - EE Interoperability Tests - Common</name>
+    <description>
+        Module used to generate legacy test client and a legacy test server to be used in interoperbility tests.
+    </description>
 
     <properties>
         <maven.compiler.source>11</maven.compiler.source>

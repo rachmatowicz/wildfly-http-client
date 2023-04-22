@@ -1,4 +1,4 @@
-package org.wildfly.httpclient.interop.test;
+package org.wilfly.httpclient.interop.test;
 
 import org.junit.Test;
 
@@ -8,9 +8,16 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 
-public class EEInteropLegacy2CurrentITCase {
+/**
+ * This test case represents a current version test case running against a legacy version server.
+ *
+ * @author Richard Achmatowicz
+ */
+public class EEInteropCurrent2LegacyITCase {
     @Test
-    public void testLegacy2CurrentInteroperation() {
+    public void testCurrent2LegacyInteroperation() {
+        System.out.println("EEInteropCurrent2LegacyITCase:testCurrent2LegacyInteroperation (version 2.0.2.Final)");
+
         // get a page from undertow
         HttpClient client = HttpClient.newHttpClient();
         HttpRequest request = HttpRequest.newBuilder().uri(URI.create("http://localhost:8080")).build();
