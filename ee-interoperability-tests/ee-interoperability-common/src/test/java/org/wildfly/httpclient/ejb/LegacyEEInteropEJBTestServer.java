@@ -18,6 +18,8 @@
 
 package org.wildfly.httpclient.ejb;
 
+import io.undertow.Undertow;
+import io.undertow.UndertowOptions;
 import io.undertow.server.handlers.CookieImpl;
 import io.undertow.server.handlers.PathHandler;
 import org.jboss.ejb.client.SessionID;
@@ -30,6 +32,10 @@ import org.jboss.ejb.server.ModuleAvailabilityListener;
 import org.jboss.ejb.server.SessionOpenRequest;
 import org.wildfly.common.annotation.NotNull;
 import org.wildfly.httpclient.interop.test.LegacyEEInteropHTTPTestServer;
+import org.xnio.OptionMap;
+import org.xnio.Options;
+import org.xnio.SslClientAuthMode;
+import org.xnio.Xnio;
 
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.LinkedBlockingDeque;
@@ -134,5 +140,26 @@ public class LegacyEEInteropEJBTestServer extends LegacyEEInteropHTTPTestServer 
                 throw new RuntimeException(e);
             }
         }
+    }
+
+    /**
+     * Test server instance to start Undertow
+     */
+    public static void main(final String[] args) throws Exception {
+        // start Undertow
+        Xnio xnio = Xnio.getInstance("nio");
+        PATH_HANDLER.addPrefixPath("/wildfly-services", SERVICES_HANDLER);
+        worker = xnio.createWorker(OptionMap.create(Options.WORKER_TASK_CORE_THREADS, 20, Options.WORKER_IO_THREADS, 10));
+        registerPaths(SERVICES_HANDLER);
+        Undertow undertow = Undertow.builder()
+                .addHttpListener(getHostPort(), getHostAddress())
+                .addHttpsListener(getSSLHostPort(), getHostAddress(), createServerSslContext())
+                .setWorker(worker)
+                .setServerOption(UndertowOptions.REQUIRE_HOST_HTTP11, true)
+                .setServerOption(UndertowOptions.NO_REQUEST_TIMEOUT, 1000)
+                .setSocketOption(Options.SSL_CLIENT_AUTH_MODE, SslClientAuthMode.REQUIRED)
+                .setHandler(securityContextAssociationHandlerElytron())
+                .build();
+        undertow.start();
     }
 }

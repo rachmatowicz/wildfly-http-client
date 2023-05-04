@@ -107,7 +107,7 @@ public class LegacyEEInteropHTTPTestServer {
     public static final String CLIENT_TRUST_STORE = "client.truststore";
     public static final char[] STORE_PASSWORD = "password".toCharArray();
 
-    private static XnioWorker worker;
+    protected static XnioWorker worker;
     private static final DefaultByteBufferPool pool = new DefaultByteBufferPool(true, BUFFER_SIZE, 1000, 10, 100);
 
     private static final Set<String> registeredPaths = new HashSet<>();
