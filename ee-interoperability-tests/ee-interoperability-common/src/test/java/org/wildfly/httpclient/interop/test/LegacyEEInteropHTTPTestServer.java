@@ -12,6 +12,7 @@ import io.undertow.server.handlers.BlockingHandler;
 import io.undertow.server.handlers.CanonicalPathHandler;
 import io.undertow.server.handlers.CookieImpl;
 import io.undertow.server.handlers.PathHandler;
+import io.undertow.server.handlers.RequestDumpingHandler;
 import io.undertow.server.handlers.error.SimpleErrorPageHandler;
 import io.undertow.util.NetworkUtils;
 import org.wildfly.elytron.web.undertow.server.ElytronContextAssociationHandler;
@@ -241,6 +242,7 @@ public class LegacyEEInteropHTTPTestServer {
         root = new AuthenticationCallHandler(root);
         root = new SimpleErrorPageHandler(root);
         root = new CanonicalPathHandler(root);
+        root = new RequestDumpingHandler(root);
         return root;
     }
 

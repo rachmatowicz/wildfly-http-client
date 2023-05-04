@@ -25,7 +25,7 @@ fi
 TEST_CLASSPATH=$1
 
 # pipe all output to null to avoid the background process hanging intermittently
-java -classpath $TEST_CLASSPATH $FQ_TEST_SERVER_NAME > /dev/null 2>&1 &
+java -classpath $TEST_CLASSPATH $FQ_TEST_SERVER_NAME > legacy.server.log 2>&1 &
 server_pid=$!
 
 echo "Started Undertow instance with pid $server_pid"

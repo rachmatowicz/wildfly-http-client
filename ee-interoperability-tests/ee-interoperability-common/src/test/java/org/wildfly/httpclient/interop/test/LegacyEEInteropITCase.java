@@ -24,27 +24,27 @@ public class LegacyEEInteropITCase {
 
     @Test
     public void testLegacy2CurrentInteroperation() throws Exception {
-        System.out.println("LegacyEEInteropITCase:testCurrent2LegacyInteroperation (version 1.1.13.Final)");
+        System.out.println("LegacyEEInteropITCase:testL2CInteroperation (version 1.1.13.Final)");
 
-        System.out.println("LegacyEEInteropITCase:testCurrent2LegacyInteroperation(): create proxy");
+        System.out.println("LegacyEEInteropITCase:testL2CInteroperation(): create proxy");
         final StatelessEJBLocator<EchoRemote> statelessEJBLocator = new StatelessEJBLocator<>(EchoRemote.class, APP, MODULE, BEAN, "");
         final EchoRemote proxy = EJBClient.createProxy(statelessEJBLocator);
         final String message = "Hello, World!";
-        EJBClient.setStrongAffinity(proxy, URIAffinity.forUri(new URI("http://localhost:7788")));
+        EJBClient.setStrongAffinity(proxy, URIAffinity.forUri(new URI(LegacyEEInteropHTTPTestServer.getDefaultServerURL())));
 
         // first message, handshake initialization, decide marshallers/unmarshallers
-        System.out.println("LegacyEEInteropITCase:testCurrent2LegacyInteroperation(): first invocation");
+        System.out.println("LegacyEEInteropITCase:testL2CInteroperation(): first invocation");
         String echo = proxy.echo(message);
-        Assert.assertEquals("Unexxpected echo message", message, echo);
+        Assert.assertEquals("Unexpected echo message", message, echo);
 
         // second message, handshake completion, agree on marshallers/unmarshallers
-        System.out.println("LegacyEEInteropITCase:testCurrent2LegacyInteroperation(): second invocation");
+        System.out.println("LegacyEEInteropITCase:testL2CInteroperation(): second invocation");
         echo = proxy.echo(message);
-        Assert.assertEquals("Unexxpected echo message", message, echo);
+        Assert.assertEquals("Unexpected echo message", message, echo);
 
         // third message message, stable marshallers/unmarshallers
-        System.out.println("LegacyEEInteropITCase:testCurrent2LegacyInteroperation(): third invocation");
+        System.out.println("LegacyEEInteropITCase:testL2CInteroperation(): third invocation");
         echo = proxy.echo(message);
-        Assert.assertEquals("Unexxpected echo message", message, echo);
+        Assert.assertEquals("Unexpected echo message", message, echo);
     }
 }

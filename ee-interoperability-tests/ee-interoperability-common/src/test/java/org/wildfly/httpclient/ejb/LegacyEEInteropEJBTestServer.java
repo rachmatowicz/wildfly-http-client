@@ -61,6 +61,11 @@ public class LegacyEEInteropEJBTestServer extends LegacyEEInteropHTTPTestServer 
     }
 
     protected static void registerPaths(PathHandler servicesHandler) {
+
+        // set up the affinity, txn and naing services
+        LegacyEEInteropHTTPTestServer.registerPaths(servicesHandler);
+
+        // set up the /ejb service
         servicesHandler.addPrefixPath("/ejb", new EjbHttpService(new Association() {
             @Override
             public <T> CancelHandle receiveInvocationRequest(@NotNull InvocationRequest invocationRequest) {
@@ -103,6 +108,14 @@ public class LegacyEEInteropEJBTestServer extends LegacyEEInteropHTTPTestServer 
             }
         }, null, null, DEFAULT_CLASS_FILTER).createHttpHandler());
 
+        // register the invocation handler for the EJB service
+        setHandler(((invocation, affinity, out, method, handle, attachments) -> {
+            if (invocation.getParameters().length == 0) {
+                return "a message";
+            } else {
+                return invocation.getParameters()[0];
+            }
+        }));
     }
 
     public static class TestCancelHandle implements CancelHandle {
