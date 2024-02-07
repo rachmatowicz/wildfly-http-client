@@ -264,7 +264,7 @@ public class HttpRootContext extends AbstractContext {
                 StringBuilder sb = new StringBuilder();
                 String uriPath = peerIdentity.getUri().getPath();
                 sb.append(uriPath);
-                if (!uriPath.endsWith("/")) {
+                if (!uriPath.endsWith("/") && !pathSegment.startsWith("/")) {
                     sb.append("/");
                 }
                 sb.append(NAMING_CONTEXT);
@@ -382,7 +382,7 @@ public class HttpRootContext extends AbstractContext {
                 String uriPath = uri.getPath();
                 sb.append(uriPath);
 
-                if (!uriPath.endsWith("/")) {
+                if (!uriPath.endsWith("/") && !pathSegment.startsWith("/")) {
                     sb.append("/");
                 }
                 sb.append(NAMING_CONTEXT);
