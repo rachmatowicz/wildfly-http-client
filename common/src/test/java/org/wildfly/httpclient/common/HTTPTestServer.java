@@ -39,7 +39,6 @@ import org.junit.runner.notification.RunNotifier;
 import org.junit.runners.BlockJUnit4ClassRunner;
 import org.junit.runners.model.InitializationError;
 import org.wildfly.elytron.web.undertow.server.ElytronContextAssociationHandler;
-import org.wildfly.httpclient.common.EENamespaceInteroperability.EENamespaceInteroperabilityProtocolVersionHandler;
 import org.wildfly.security.WildFlyElytronProvider;
 import org.wildfly.security.auth.permission.LoginPermission;
 import org.wildfly.security.auth.realm.SimpleMapBackedSecurityRealm;

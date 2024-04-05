@@ -68,9 +68,9 @@ final class EENamespaceInteroperability {
             WildFlySecurityManager.getPropertyPrivileged("org.wildfly.ee.namespace.interop", "false"));
 
     // header indicating the protocol version mode that is being used by the request/response sender
-    private static final HttpString PROTOCOL_VERSION = new HttpString("x-wf-version");
+    public static final HttpString PROTOCOL_VERSION = new HttpString("x-wf-version");
     // value for PROTOCOL_VERSION header: used to handshake a higher version, only when both ends use EE jakarta namespace
-    private static final String LATEST_VERSION = String.valueOf(Protocol.LATEST);
+    public static final String LATEST_VERSION = String.valueOf(Protocol.LATEST);
     // key used to attach http marshaller factory to a client request / server exchange
     private static final AttachmentKey<HttpMarshallerFactory> HTTP_MARSHALLER_FACTORY_KEY = AttachmentKey.create(HttpMarshallerFactory.class);
     // key used to attach an http unmarshaller factory to a server exchange
@@ -352,24 +352,6 @@ final class EENamespaceInteroperability {
     /*
     Server side EE namespace interoperability
      */
-
-    public static class EENamespaceInteroperabilityProtocolVersionHandler implements HttpHandler {
-
-        private final HttpHandler next;
-
-        EENamespaceInteroperabilityProtocolVersionHandler(HttpHandler next) {
-            this.next = next;
-        }
-
-        @Override
-        public void handleRequest(HttpServerExchange exchange) throws Exception {
-            // if a PROTOCOL_VERSION header is present, we need to respond with our protocol version
-            if (exchange.getRequestHeaders().getFirst(PROTOCOL_VERSION) != null) {
-                exchange.getResponseHeaders().add(PROTOCOL_VERSION, LATEST_VERSION);
-            }
-            next.handleRequest(exchange);
-        }
-    }
 
     private static class EENamespaceInteroperabilityHandler implements HttpHandler {
 
