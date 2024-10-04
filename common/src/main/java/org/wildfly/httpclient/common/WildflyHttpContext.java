@@ -23,6 +23,7 @@ import io.undertow.connector.ByteBufferPool;
 import io.undertow.server.DefaultByteBufferPool;
 import org.wildfly.common.context.ContextManager;
 import org.wildfly.common.context.Contextual;
+import org.xnio.Options;
 import org.xnio.OptionMap;
 import org.xnio.XnioWorker;
 
@@ -45,6 +46,7 @@ import static java.security.AccessController.doPrivileged;
 public class WildflyHttpContext implements Contextual<WildflyHttpContext> {
 
     private static final int LEAK_DETECTION = Integer.getInteger("org.wildfly.http-client.buffer-leak-detection", 0);
+    private static final boolean TCP_NODELAY = Boolean.getBoolean("org.wildfly.httpclient.tcp-nodelay");
 
     /**
      * The context manager for HTTP endpoints.
@@ -117,8 +119,11 @@ public class WildflyHttpContext implements Contextual<WildflyHttpContext> {
             if (context != null) {
                 return context;
             }
+            // add in org.xnio.Options.TCP_NODELAY setting (see WEJBHTTP-144)
+            OptionMap uriConnectionPoolOptions = OptionMap.create(UndertowOptions.ENABLE_HTTP2, enableHttp2, Options.TCP_NODELAY, TCP_NODELAY);
+
             HttpConnectionPool pool = httpConnectionPoolFactory.createHttpConnectionPool(
-                    maxConnections, maxStreamsPerConnection, worker, this.pool, OptionMap.create(UndertowOptions.ENABLE_HTTP2, enableHttp2), new HostPool(uri), idleTimeout);
+                    maxConnections, maxStreamsPerConnection, worker, this.pool, uriConnectionPoolOptions , new HostPool(uri), idleTimeout);
             uriConnectionPools.put(uri, context = new HttpTargetContext(pool, eagerlyAcquireAffinity, uri, httpMarshallerFactoryProvider));
             context.init();
             return context;
@@ -190,8 +195,12 @@ public class WildflyHttpContext implements Contextual<WildflyHttpContext> {
                 if(sb.getEnableHttp2() != null) {
                     http2 = sb.getEnableHttp2();
                 }
+
+                // add in org.xnio.Options.TCP_NODELAY setting (see WEJBHTTP-144)
+                OptionMap connectionPoolOptions = OptionMap.create(UndertowOptions.ENABLE_HTTP2, http2, Options.TCP_NODELAY, TCP_NODELAY);
+
                 ConfigSection connection = new ConfigSection(new HttpTargetContext(
-                        httpConnectionPoolFactory.createHttpConnectionPool(sb.getMaxConnections() > 0 ? sb.getMaxConnections() : maxConnections, sb.getMaxStreamsPerConnection() > 0 ? sb.getMaxStreamsPerConnection() : maxStreamsPerConnection, worker, pool, OptionMap.create(UndertowOptions.ENABLE_HTTP2, http2),
+                        httpConnectionPoolFactory.createHttpConnectionPool(sb.getMaxConnections() > 0 ? sb.getMaxConnections() : maxConnections, sb.getMaxStreamsPerConnection() > 0 ? sb.getMaxStreamsPerConnection() : maxStreamsPerConnection, worker, pool, connectionPoolOptions,
                                 hp, sb.getIdleTimeout() > 0 ? sb.getIdleTimeout() : idleTimout), eager, sb.getUri(), httpMarshallerFactoryProvider),
                         sb.getUri());
                 connections[i] = connection;
