@@ -280,6 +280,7 @@ public class HTTPTestServer extends BlockJUnit4ClassRunner {
         root = new AuthenticationCallHandler(root);
         root = new SimpleErrorPageHandler(root);
         root = new CanonicalPathHandler(root);
+        root = new DummyRouteHandler(root);
         root = new RequestDumpingHandler(root);
         return root;
     }
