@@ -32,6 +32,7 @@ import io.undertow.server.handlers.CanonicalPathHandler;
 import io.undertow.server.handlers.Cookie;
 import io.undertow.server.handlers.CookieImpl;
 import io.undertow.server.handlers.PathHandler;
+import io.undertow.server.handlers.RequestDumpingHandler;
 import io.undertow.server.handlers.error.SimpleErrorPageHandler;
 import io.undertow.server.session.SecureRandomSessionIdGenerator;
 import io.undertow.util.StatusCodes;
@@ -283,6 +284,7 @@ public class HTTPTestServer extends BlockJUnit4ClassRunner {
         root = new SimpleErrorPageHandler(root);
         root = new CanonicalPathHandler(root);
         root = new DummyRouteHandler(root);
+        root = new RequestDumpingHandler(root);
         return root;
     }
 
@@ -367,6 +369,13 @@ public class HTTPTestServer extends BlockJUnit4ClassRunner {
         }
     }
 
+    /**
+     * Add a response commit listener to modify the response to do the following:
+     * - add in a JSESSIONID cookie to the response when the response:
+     * (1) has no JSESSIONID cookie and
+     * (2) we are in an authentication response-regenerate request cycle
+     * This allows the regenerated request to get back to the same backend node.
+     */
     private class DummyRouteHandler implements HttpHandler {
         private volatile HttpHandler next;
         private final RoutingSupport routingSupport = new SimpleRoutingSupport();
