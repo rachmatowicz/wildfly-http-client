@@ -109,6 +109,8 @@ public class HTTPTestServer extends BlockJUnit4ClassRunner {
     public static final String CLIENT_KEY_STORE = "client.keystore";
     public static final String CLIENT_TRUST_STORE = "client.truststore";
     public static final char[] STORE_PASSWORD = "password".toCharArray();
+    public static final String JSESSIONID = "JSESSIONID";
+    public static final String ROUTE = "localhost";
 
     private static boolean first = true;
     private static Undertow undertow;
@@ -363,6 +365,44 @@ public class HTTPTestServer extends BlockJUnit4ClassRunner {
         @Override
         public Set<String> getRoles() {
             return Collections.emptySet();
+        }
+    }
+
+    /**
+     * Add a response commit listener to modify the response to do the following:
+     * - add in a JSESSIONID cookie to the response when the response:
+     * (1) has no JSESSIONID cookie and
+     * (2) we are in an authentication response-regenerate request cycle
+     * This allows the regenerated request to get back to the same backend node.
+     */
+    private class DummyRouteHandler implements HttpHandler {
+        private volatile HttpHandler next;
+        private final RoutingSupport routingSupport = new SimpleRoutingSupport();
+        private final SecureRandomSessionIdGenerator generator = new SecureRandomSessionIdGenerator();
+
+        public DummyRouteHandler(HttpHandler next) {
+            this.next = next;
+        }
+
+        @Override
+        public void handleRequest(HttpServerExchange exchange) throws Exception {
+            exchange.addResponseCommitListener(ex -> {
+                Cookie cookie = ex.getResponseCookies().get(JSESSIONID);
+                if (cookie != null) {
+                    // skip encoding if a route is already present
+                    if (routingSupport.parse(cookie.getValue()).getValue() != null) return;
+                    CharSequence encodeSessionID = routingSupport.format(cookie.getValue(), ROUTE);
+                    cookie.setValue(encodeSessionID.toString());
+                    HttpClientMessages.MESSAGES.infof("Adding route %s to unencoded JSESSIONID", ROUTE);
+                } else if (ex.getStatusCode() == StatusCodes.UNAUTHORIZED) {
+                    CharSequence encodedSessionID = routingSupport.format(generator.createSessionId(), ROUTE);
+                    cookie = new CookieImpl(JSESSIONID, encodedSessionID.toString());
+                    cookie.setPath(ex.getResolvedPath());
+                    exchange.getResponseCookies().put(JSESSIONID, cookie);
+                    HttpClientMessages.MESSAGES.infof("Adding encoded session id %s to unencoded JSESSIONID", encodedSessionID.toString());
+                }
+            });
+            next.handleRequest(exchange);
         }
     }
 }
