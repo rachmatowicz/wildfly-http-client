@@ -190,36 +190,52 @@ final class ServerHandlers {
             System.arraycopy(parts, 7, parameterTypeNames, 0, parameterTypeNames.length);
 
             // process Cookies and Headers
-            Version version = getVersion(exchange);
             String encodedHTTPSessionID = null;
+            Version version = getVersion(exchange);
+            switch (version.handler()) {
+                // Process Cookies and Headers for VERSION_1,2 handlers
+                // make the session affinity value available for cancellation, if it exists
+                case VERSION_1:
+                case VERSION_2: {
+                    // get the HTTP sessionID , if any
+                    Cookie cookie = exchange.getRequestCookie(JSESSIONID_COOKIE_NAME);
+                    encodedHTTPSessionID = cookie != null ? cookie.getValue() : null;
 
-            if (version.handler() == Version.Handler.VERSION_3) {
-                if (HttpStickinessHelper.hasEncodedSessionID(exchange)) {
-                    encodedHTTPSessionID = HttpStickinessHelper.getEncodedSessionID(exchange);
+                    break;
                 }
+                // Process Cookies and Headers for VERSION_3 handlers
+                // NOTE: we do not know what the bean type is at this stage, so we cannot process conditional on SLSB or SFSB
+                // - get the HTTP sessionAffinity value available for cancellation, if any
+                // - check for STRICT_STICKINESS_NODE to see if stickiness is required and throw an exception if we have failec
+                case VERSION_3: {
+                    if (HttpStickinessHelper.hasEncodedSessionID(exchange)) {
+                        encodedHTTPSessionID = HttpStickinessHelper.getEncodedSessionID(exchange);
+                    }
 
-                String actualHost = System.getProperty("jboss.node.name");
-                String intendedHost = null;
-                if (HttpStickinessHelper.hasStrictStickinessHost(exchange)) {
-                    intendedHost = HttpStickinessHelper.getStrictStickinessHost(exchange);
+                    // this will be automatically available on Wildfly but has to be configured on the test server
+                    String actualHost = System.getProperty("jboss.node.name");
+                    String intendedHost = null;
+                    if (HttpStickinessHelper.hasStrictStickinessHost(exchange)) {
+                        intendedHost = HttpStickinessHelper.getStrictStickinessHost(exchange);
+                    }
+                    if (intendedHost != null && !intendedHost.equals(actualHost)) {
+                        exchange.setStatusCode(io.undertow.util.StatusCodes.OK);
+                        HttpStickinessHelper.addStrictStickinessResult(exchange, "failed");
+                        HttpStickinessHelper.addStrictStickinessHost(exchange, intendedHost);
+                        EjbHttpClientMessages.MESSAGES.infof("Failover attempted on invocation with strict stickiness: intended node %s, actual node %s", intendedHost, actualHost);
+                        return;
+                    }
+                    break;
                 }
-                if (intendedHost != null && !intendedHost.equals(actualHost)) {
-                    exchange.setStatusCode(io.undertow.util.StatusCodes.OK);
-                    HttpStickinessHelper.addStrictStickinessResult(exchange, "failed");
-                    HttpStickinessHelper.addStrictStickinessHost(exchange, intendedHost);
-                    EjbHttpClientMessages.MESSAGES.infof("Failover attempted on invocation with strict stickiness: intended node %s, actual node %s", intendedHost, actualHost);
-                    return;
-                }
-            } else {
-                Cookie cookie = exchange.getRequestCookie(JSESSIONID_COOKIE_NAME);
-                encodedHTTPSessionID = cookie != null ? cookie.getValue() : null;
+                // should not reach here
+                default:
+                    throw new IllegalStateException("Invalid handler version encountered: " + version);
             }
 
+            // extract the "session affinity" from the Cookie (NOTE: this can be null for SLSB with no JSESSIONID Cookie)
             String httpSessionID = null;
             if (encodedHTTPSessionID != null) {
-                httpSessionID = (version.handler() == Version.Handler.VERSION_3)
-                        ? HttpStickinessHelper.extractSessionIDFromEncodedSessionID(encodedHTTPSessionID)
-                        : encodedHTTPSessionID;
+                httpSessionID = HttpStickinessHelper.extractSessionIDFromEncodedSessionID(encodedHTTPSessionID);
             }
 
             final String sessionAffinity = httpSessionID;
@@ -480,31 +496,51 @@ final class ServerHandlers {
                 try {
                     // process Cookies and Headers
                     Version version = getVersion(exchange);
-                    if (version.handler() == Version.Handler.VERSION_3) {
-                        final String node = System.getProperty("jboss.node.name", "localhost");
+                    switch(version.handler()) {
+                        // process Cookies and Headers for VERSION_1,2
+                        case VERSION_1:
+                        case VERSION_2: {
+                            // noop
+                            break;
+                        }
+                        // process Cookies and Headers for VERSION_3
+                        // - transaction scoped requests:
+                        //   - add a Cookie with the server sessionID + route
+                        //   - add a stickiness header
+                        // - SFSB requests:
+                        //   - add a Cookie with the server sessionID + route
+                        //   - add a stickiness header of the bean not replicated (i.e. of strong affinity not instanceof)
+                        // - SLSB which have ClusterAffinity
+                        //   - need to send back updated strong affinity
+                        case VERSION_3: {
+                            // the jboss.node.name is used as a route (appended automatically) by HttpInvokerHostService
+                            // the same route needs to be used for the stickiness node
+                            final String node = System.getProperty("jboss.node.name", "localhost");
 
-                        if (hasTransaction()) {
-                            if (sessionAffinity != null) {
-                                HttpStickinessHelper.addEncodedSessionID(exchange, sessionAffinity, node);
-                            } else {
-                                String newSessionId = sessionIdGenerator.createSessionId();
-                                HttpStickinessHelper.addEncodedSessionID(exchange, newSessionId, node);
-                            }
-                            HttpStickinessHelper.addStrictStickinessHost(exchange, node);
-                            HttpStickinessHelper.addStrictStickinessResult(exchange, "success");
+                            if (hasTransaction()) {
+                                if (sessionAffinity != null) {
+                                    HttpStickinessHelper.addEncodedSessionID(exchange, sessionAffinity, node);
+                                } else {
+                                    String newSessionId = sessionIdGenerator.createSessionId();
+                                    HttpStickinessHelper.addEncodedSessionID(exchange, newSessionId, node);
+                                }
+                                HttpStickinessHelper.addStrictStickinessHost(exchange, node);
+                                HttpStickinessHelper.addStrictStickinessResult(exchange, "success");
 
-                        } else if (getEJBLocator() instanceof StatefulEJBLocator) {
-                            if (sessionAffinity != null) {
-                                HttpStickinessHelper.addEncodedSessionID(exchange, sessionAffinity, node);
-                            } else {
-                                String newSessionId = sessionIdGenerator.createSessionId();
-                                HttpStickinessHelper.addEncodedSessionID(exchange, newSessionId, node);
+                            } else if (getEJBLocator() instanceof StatefulEJBLocator) {
+                                if (sessionAffinity != null) {
+                                    HttpStickinessHelper.addEncodedSessionID(exchange, sessionAffinity, node);
+                                } else {
+                                    String newSessionId = sessionIdGenerator.createSessionId();
+                                    HttpStickinessHelper.addEncodedSessionID(exchange, newSessionId, node);
+                                }
+                                HttpStickinessHelper.addStrictStickinessHost(exchange, node);
+                                HttpStickinessHelper.addStrictStickinessResult(exchange, "success");
                             }
-                            HttpStickinessHelper.addStrictStickinessHost(exchange, node);
-                            HttpStickinessHelper.addStrictStickinessResult(exchange, "success");
                         }
                     }
 
+                    // set the content type
                     putResponseHeader(exchange, CONTENT_TYPE, Constants.EJB_RESPONSE);
 
                     final OutputStream os = exchange.getOutputStream();
@@ -550,7 +586,7 @@ final class ServerHandlers {
             }
         }
     }
-
+//
     private static final class HttpCancelHandler extends AbstractEjbHandler {
 
         private final Map<InvocationIdentifier, CancelHandle> cancellationFlags;
@@ -640,14 +676,22 @@ final class ServerHandlers {
 
             // process Cookies and Headers
             Version version = getVersion(exchange);
-            if (version.handler() == Version.Handler.VERSION_3) {
-                assert !HttpStickinessHelper.hasEncodedSessionID(exchange) : "incoming session open request has unexpected Cookie";
-            } else {
-                Cookie cookie = exchange.getRequestCookie(JSESSIONID_COOKIE_NAME);
-                String sessionAffinity = null;
-                if (cookie != null) {
-                    sessionAffinity = cookie.getValue();
-                }
+            switch (version.handler()) {
+                // Process Cookies and Headers for VERSION_1, 2 handlers
+                // TODO: this code is not used
+                case VERSION_1:
+                case VERSION_2:
+                    Cookie cookie = exchange.getRequestCookie(JSESSIONID_COOKIE_NAME);
+                    String sessionAffinity = null;
+                    if (cookie != null) {
+                        sessionAffinity = cookie.getValue();
+                    }
+                    break;
+                // Process Cookies and Headers for VERSION_3 handlers
+                // - the session open request should have no associated Cookie (only holds if we are not in a transaction)
+                case VERSION_3:
+                    assert !HttpStickinessHelper.hasEncodedSessionID(exchange) : "incoming session open request has unexpected Cookie";
+                    break;
             }
 
             final EJBIdentifier ejbIdentifier = new EJBIdentifier(app, module, bean, distinct);
@@ -770,25 +814,37 @@ final class ServerHandlers {
 
                     @Override
                     public void convertToStateful(@NotNull SessionID sessionId) throws IllegalArgumentException, IllegalStateException {
-
-                        Version ver = getVersion(exchange);
-                        if (ver.handler() == Version.Handler.VERSION_3) {
-                            final String node = System.getProperty("jboss.node.name", "localhost");
-                            HttpStickinessHelper.addEncodedSessionID(exchange, serverSessionID, node);
-                            if (strongAffinity instanceof NodeAffinity || hasTransaction()) {
-                                HttpStickinessHelper.addStrictStickinessHost(exchange, node);
-                                HttpStickinessHelper.addStrictStickinessResult(exchange, "success");
-                            }
-                        } else {
-                            Cookie sessionCookie = exchange.getRequestCookie(JSESSIONID_COOKIE_NAME);
-                            if (sessionCookie == null) {
-                                String rootPath = exchange.getResolvedPath();
-                                int ejbIndex = rootPath.lastIndexOf("/ejb");
-                                if (ejbIndex > 0) {
-                                    rootPath = rootPath.substring(0, ejbIndex);
+                        Version version = getVersion(exchange);
+                        // process Cookies and Headers
+                        switch(version.handler()) {
+                            // process Cookies and Headers for VERSION_1, 2
+                            // - ensure that every session open request has a Cookie tied to this node
+                            case VERSION_1:
+                            case VERSION_2:
+                                Cookie sessionCookie = exchange.getRequestCookie(JSESSIONID_COOKIE_NAME);
+                                if (sessionCookie == null) {
+                                    String rootPath = exchange.getResolvedPath();
+                                    int ejbIndex = rootPath.lastIndexOf("/ejb");
+                                    if (ejbIndex > 0) {
+                                        rootPath = rootPath.substring(0, ejbIndex);
+                                    }
+                                    exchange.setResponseCookie(new CookieImpl(JSESSIONID_COOKIE_NAME, sessionIdGenerator.createSessionId()).setPath(rootPath));
                                 }
-                                exchange.setResponseCookie(new CookieImpl(JSESSIONID_COOKIE_NAME, sessionIdGenerator.createSessionId()).setPath(rootPath));
-                            }
+                                break;
+                            // process Cookies and Headers for VERSION_3
+                            // - add a Cookie with the server sessionID + route
+                            // - add a stickiness header if bean not replicated (i.e. if strong affinity not instanceof NodeAffinity)
+                            case VERSION_3:
+                                final String node = System.getProperty("jboss.node.name", "localhost");
+                                // add a Cookie for the load balancer, no Cookie attributes required as this will not be read by a browser
+                                // the correct route will be appended by the Host (see HttpInvokerHostService)
+                                HttpStickinessHelper.addUnencodedSessionID(exchange, serverSessionID);
+                                // add strict stickiness header if required (i.e. when session state os not replicated or we are in a transaction)
+                                if (strongAffinity instanceof NodeAffinity || hasTransaction()) {
+                                    HttpStickinessHelper.addStrictStickinessHost(exchange, node);
+                                    HttpStickinessHelper.addStrictStickinessResult(exchange, "success");
+                                }
+                                break;
                         }
 
                         putResponseHeader(exchange, CONTENT_TYPE, EJB_RESPONSE_NEW_SESSION);

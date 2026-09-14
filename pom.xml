@@ -422,6 +422,7 @@
                             <test.level>${test.level}</test.level>
                             <java.net.preferIPv6Addresses>${test.ipv6}</java.net.preferIPv6Addresses>
                             <sun.net.useExclusiveBind>false</sun.net.useExclusiveBind>
+                            <jboss.node.name>localhost</jboss.node.name>
                         </systemPropertyVariables>
                     </configuration>
                     <executions>

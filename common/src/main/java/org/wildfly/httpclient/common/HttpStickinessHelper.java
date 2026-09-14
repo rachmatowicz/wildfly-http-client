@@ -125,7 +125,7 @@ public class HttpStickinessHelper {
         Map.Entry<CharSequence, CharSequence> parsedSessionID = routingSupport.parse(encodedSessionID);
         String sessionID = parsedSessionID.getKey().toString();
 
-        HttpClientMessages.MESSAGES.infof("HttpStickinessHelper: encodedSessionID = %s, sessionID = %s", encodedSessionID, sessionID);
+        HttpClientMessages.MESSAGES.infof("HttpStickinessHelper:extractSessionIDFromEncodedSessionID(): encodedSessionID = %s, sessionID = %s", encodedSessionID, sessionID);
         return sessionID;
     }
 
@@ -134,17 +134,17 @@ public class HttpStickinessHelper {
         CharSequence routeValue = parsedSessionID.getValue();
         String route = routeValue != null ? routeValue.toString() : null;
 
-        HttpClientMessages.MESSAGES.infof("HttpStickinessHelper: encodedSessionID = %s, route = %s", encodedSessionID, route);
+        HttpClientMessages.MESSAGES.infof("HttpStickinessHelper:extractRouteFromEncodedSessionID(): encodedSessionID = %s, route = %s", encodedSessionID, route);
         return route;
     }
 
     public static boolean hasEncodedSessionID(HttpServerExchange exchange) {
-        Cookie cookie = exchange.getRequestCookies().get(JSESSIONID_COOKIE_NAME.toString());
+        Cookie cookie = exchange.getRequestCookie(JSESSIONID_COOKIE_NAME.toString());
         return cookie != null;
     }
 
     public static String getEncodedSessionID(HttpServerExchange exchange) {
-        Cookie cookie = exchange.getRequestCookies().get(JSESSIONID_COOKIE_NAME.toString());
+        Cookie cookie = exchange.getRequestCookie(JSESSIONID_COOKIE_NAME.toString());
         if (cookie != null) {
             return cookie.getValue();
         }

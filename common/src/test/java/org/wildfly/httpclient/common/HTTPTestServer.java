@@ -110,7 +110,7 @@ public class HTTPTestServer extends BlockJUnit4ClassRunner {
     public static final String CLIENT_TRUST_STORE = "client.truststore";
     public static final char[] STORE_PASSWORD = "password".toCharArray();
     public static final String JSESSIONID = "JSESSIONID";
-    public static final String ROUTE = "route";
+    public static final String ROUTE = "localhost";
 
     private static boolean first = true;
     private static Undertow undertow;
@@ -394,11 +394,13 @@ public class HTTPTestServer extends BlockJUnit4ClassRunner {
                     if (routingSupport.parse(cookie.getValue()).getValue() != null) return;
                     CharSequence encodeSessionID = routingSupport.format(cookie.getValue(), ROUTE);
                     cookie.setValue(encodeSessionID.toString());
+                    HttpClientMessages.MESSAGES.infof("Adding route %s to unencoded JSESSIONID", ROUTE);
                 } else if (ex.getStatusCode() == StatusCodes.UNAUTHORIZED) {
                     CharSequence encodedSessionID = routingSupport.format(generator.createSessionId(), ROUTE);
                     cookie = new CookieImpl(JSESSIONID, encodedSessionID.toString());
                     cookie.setPath(ex.getResolvedPath());
                     exchange.getResponseCookies().put(JSESSIONID, cookie);
+                    HttpClientMessages.MESSAGES.infof("Adding encoded session id %s to unencoded JSESSIONID", encodedSessionID.toString());
                 }
             });
             next.handleRequest(exchange);
