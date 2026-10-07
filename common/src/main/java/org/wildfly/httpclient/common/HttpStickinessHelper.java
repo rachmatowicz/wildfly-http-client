@@ -18,6 +18,9 @@
 
 package org.wildfly.httpclient.common;
 
+import org.wildfly.httpclient.common.HttpTargetContext.RequestContext;
+import org.wildfly.httpclient.common.HttpTargetContext.ResponseContext;
+
 import io.undertow.client.ClientRequest;
 import io.undertow.client.ClientResponse;
 import io.undertow.server.HttpServerExchange;
@@ -93,6 +96,12 @@ public class HttpStickinessHelper {
         request.getRequestHeaders().put(Headers.COOKIE, cookieValue);
     }
 
+    public static void addEncodedSessionID(RequestContext requestContext, String sessionID, String route) {
+        CharSequence encodedSessionID = routingSupport.format(sessionID, route);
+        String cookieValue = JSESSIONID_COOKIE_NAME + "=" + encodedSessionID.toString();
+        requestContext.putRequestHeader(Headers.COOKIE, cookieValue);
+    }
+
     public static boolean hasEncodedSessionID(ClientResponse response) {
         boolean hasCookie = false;
         HeaderValues cookies = response.getResponseHeaders().get(Headers.SET_COOKIE);
@@ -107,9 +116,37 @@ public class HttpStickinessHelper {
         return hasCookie;
     }
 
+    public static boolean hasEncodedSessionID(ResponseContext responseContext) {
+        boolean hasCookie = false;
+        HeaderValues cookies = responseContext.getResponseHeaders(Headers.SET_COOKIE);
+        if (cookies != null) {
+            for (String cookie : cookies) {
+                Cookie c = Cookies.parseSetCookieHeader(cookie);
+                if (c.getName().equals("JSESSIONID")) {
+                    hasCookie = true;
+                }
+            }
+        }
+        return hasCookie;
+    }
+
     public static String getEncodedSessionID(ClientResponse response) {
         String encodedSessionID = null;
         HeaderValues cookies = response.getResponseHeaders().get(Headers.SET_COOKIE);
+        if (cookies != null) {
+            for (String cookie : cookies) {
+                Cookie c = Cookies.parseSetCookieHeader(cookie);
+                if (c.getName().equals("JSESSIONID")) {
+                    encodedSessionID = c.getValue();
+                }
+            }
+        }
+        return encodedSessionID;
+    }
+
+    public static String getEncodedSessionID(ResponseContext responseContext) {
+        String encodedSessionID = null;
+        HeaderValues cookies = responseContext.getResponseHeaders(Headers.SET_COOKIE);
         if (cookies != null) {
             for (String cookie : cookies) {
                 Cookie c = Cookies.parseSetCookieHeader(cookie);
@@ -166,8 +203,17 @@ public class HttpStickinessHelper {
         request.getRequestHeaders().put(STRICT_STICKINESS_HOST, host);
     }
 
+    public static void addStrictStickinessHost(RequestContext requestContext, String host) {
+        requestContext.putRequestHeader(STRICT_STICKINESS_HOST, host);
+    }
+
     public static boolean hasStrictStickinessHost(ClientResponse response) throws Exception {
         HeaderValues strictStickinessHosts = response.getResponseHeaders().get(STRICT_STICKINESS_HOST);
+        return strictStickinessHosts != null && strictStickinessHosts.size() > 0;
+    }
+
+    public static boolean hasStrictStickinessHost(ResponseContext responseContext) throws Exception {
+        HeaderValues strictStickinessHosts = responseContext.getResponseHeaders(STRICT_STICKINESS_HOST);
         return strictStickinessHosts != null && strictStickinessHosts.size() > 0;
     }
 
@@ -183,8 +229,24 @@ public class HttpStickinessHelper {
         return strictStickinessHost;
     }
 
+    public static String getStrictStickinessHost(ResponseContext responseContext) throws Exception {
+        String strictStickinessHost = null;
+        HeaderValues strictStickinessHosts = responseContext.getResponseHeaders(STRICT_STICKINESS_HOST);
+        if (strictStickinessHosts != null && strictStickinessHosts.size() > 0) {
+            strictStickinessHost = strictStickinessHosts.getFirst();
+            if(strictStickinessHost == null) {
+                throw new Exception("Stickiness host is null - this should not happen");
+            }
+        }
+        return strictStickinessHost;
+    }
+
     public static void addStrictStickinessResult(ClientRequest request, String result) {
         request.getRequestHeaders().put(STRICT_STICKINESS_RESULT, result);
+    }
+
+    public static void addStrictStickinessResult(RequestContext requestContext, String result) {
+        requestContext.putRequestHeader(STRICT_STICKINESS_RESULT, result);
     }
 
     public static boolean hasStrictStickinessResult(ClientResponse response) throws Exception {
@@ -192,10 +254,29 @@ public class HttpStickinessHelper {
         return strictStickinessResults != null && strictStickinessResults.size() > 0;
     }
 
+    public static boolean hasStrictStickinessResult(ResponseContext responseContext) throws Exception {
+        HeaderValues strictStickinessResults = responseContext.getResponseHeaders(STRICT_STICKINESS_RESULT);
+        return strictStickinessResults != null && strictStickinessResults.size() > 0;
+    }
+
     public static boolean getStrictStickinessResult(ClientResponse response) throws Exception {
         boolean isSticky = false;
         String strictStickinessResult = null;
         HeaderValues strictStickinessResults = response.getResponseHeaders().get(STRICT_STICKINESS_RESULT);
+        if (strictStickinessResults != null && strictStickinessResults.size() > 0) {
+            strictStickinessResult = strictStickinessResults.getFirst();
+            if(!strictStickinessResult.equals("success")) {
+                throw new Exception("Stickiness result indicates failure - we failed over when we should not have failed over");
+            }
+            isSticky = true;
+        }
+        return isSticky;
+    }
+
+    public static boolean getStrictStickinessResult(ResponseContext responseContext) throws Exception {
+        boolean isSticky = false;
+        String strictStickinessResult = null;
+        HeaderValues strictStickinessResults = responseContext.getResponseHeaders(STRICT_STICKINESS_RESULT);
         if (strictStickinessResults != null && strictStickinessResults.size() > 0) {
             strictStickinessResult = strictStickinessResults.getFirst();
             if(!strictStickinessResult.equals("success")) {
@@ -249,6 +330,22 @@ public class HttpStickinessHelper {
         return route;
     }
 
+    public static String updateNode2SessionIDMap(ConcurrentMap<URI, ConcurrentMap<String, String>> node2SessionIdMap, URI uri, ResponseContext responseContext) {
+        String encodedSessionID = getEncodedSessionID(responseContext);
+        String sessionID = extractSessionIDFromEncodedSessionID(encodedSessionID);
+        String route = extractRouteFromEncodedSessionID(encodedSessionID);
+
+        String oldSessionID = addSessionIDForNode(node2SessionIdMap, uri, route, sessionID);
+
+        if (oldSessionID != null) {
+            HttpClientMessages.MESSAGES.infof("HttpStickinessHandler:updateNode2SessionIDMap uri = %s, node = %s, oldSessionID = %s, sessionId = %s", uri, route, oldSessionID, sessionID);
+        } else {
+            HttpClientMessages.MESSAGES.infof("HttpStickinessHandler:updateNode2SessionIDMap uri = %s, node = %s, sessionId = %s", uri, route, sessionID);
+        }
+
+        return route;
+    }
+
     public static String addSessionIDForNode(ConcurrentMap<URI, ConcurrentMap<String, String>> node2SessionIdMap, URI uri, String node, String sessionID) {
         ConcurrentMap<String, String> map = node2SessionIdMap.get(uri);
         if (map == null) {
@@ -273,6 +370,8 @@ public class HttpStickinessHelper {
     public static boolean hasSessionIDForNode(ConcurrentMap<URI, ConcurrentMap<String, String>> node2SessionIdMap, URI uri, String node) {
         return getSessionIDForNode(node2SessionIdMap, uri, node) != null;
     }
+
+    // cannot be used in RequestContext / ResponseContext-based methods
 
     public static void dumpResponseHeaders(ClientResponse response) {
         HeaderMap headers = response.getResponseHeaders();
