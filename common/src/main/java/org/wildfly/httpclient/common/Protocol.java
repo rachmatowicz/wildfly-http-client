@@ -20,11 +20,13 @@ package org.wildfly.httpclient.common;
 /**
  * Protocol version constants.
  *
+ * NOTE: HTTP context path prefixes are a legacy requirement used in versions 1 and 2 of the protocol to
+ * support interoperability between Java EE and Jakarta EE.
+ *
  * @author Flavia Rainone
  */
 public class Protocol {
     static final String VERSION_ONE_PATH = "/v1";
     static final String VERSION_TWO_PATH = "/v2";
-    static final String VERSION_THREE_PATH = "/v3";
     private Protocol() {}
 }

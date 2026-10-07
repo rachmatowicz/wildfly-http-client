@@ -18,7 +18,6 @@
 package org.wildfly.httpclient.common;
 
 import static org.wildfly.httpclient.common.Protocol.VERSION_ONE_PATH;
-import static org.wildfly.httpclient.common.Protocol.VERSION_THREE_PATH;
 import static org.wildfly.httpclient.common.Protocol.VERSION_TWO_PATH;
 
 import io.undertow.server.HttpHandler;
@@ -103,9 +102,9 @@ public final class HttpServiceConfig {
      */
     public HttpHandler wrap(final HttpHandler handler) {
         final PathHandler versionPathHandler = new PathHandler();
+        // handle all allowable legacy prefix paths (VERSION_ONE_PATH and VERSION_TWO_PATH only)
         versionPathHandler.addPrefixPath(VERSION_ONE_PATH, handler);
         versionPathHandler.addPrefixPath(VERSION_TWO_PATH, handler);
-        versionPathHandler.addPrefixPath(VERSION_THREE_PATH, handler);
         return versionPathHandler;
     }
 
