@@ -32,9 +32,7 @@ import static org.wildfly.httpclient.ejb.TransactionInfo.localTransaction;
 import static org.wildfly.httpclient.ejb.TransactionInfo.nullTransaction;
 import static org.wildfly.httpclient.ejb.TransactionInfo.remoteTransaction;
 
-import io.undertow.client.ClientExchange;
 import io.undertow.client.ClientRequest;
-import io.undertow.client.ClientResponse;
 import io.undertow.server.session.SecureRandomSessionIdGenerator;
 import io.undertow.server.session.SessionIdGenerator;
 import io.undertow.util.AttachmentKey;
@@ -55,6 +53,8 @@ import org.jboss.marshalling.Unmarshaller;
 import org.wildfly.httpclient.common.HttpMarshallerFactory;
 import org.wildfly.httpclient.common.HttpStickinessHelper;
 import org.wildfly.httpclient.common.HttpTargetContext;
+import org.wildfly.httpclient.common.HttpTargetContext.RequestContext;
+import org.wildfly.httpclient.common.HttpTargetContext.ResponseContext;
 import org.wildfly.httpclient.common.WildflyHttpContext;
 import org.wildfly.httpclient.transaction.XidProvider;
 import org.wildfly.security.auth.client.AuthenticationConfiguration;
@@ -342,8 +342,8 @@ class HttpEJBReceiver extends EJBReceiver {
         }
 
         @Override
-        public void prepareRequest(ClientRequest request) throws Exception {
-            EjbHttpClientMessages.MESSAGES.infof("Calling SessionCreationStickinessHandler.prepareRequest for request %s", request);
+        public void prepareRequest(RequestContext requestContext) throws Exception {
+            EjbHttpClientMessages.MESSAGES.infof("Calling SessionCreationStickinessHandler.prepareRequest for request %s", requestContext);
             EJBSessionCreationInvocationContext context = receiverSessionCreationContext.getClientInvocationContext();
 
             if (inTransaction(context)) {
@@ -353,14 +353,14 @@ class HttpEJBReceiver extends EJBReceiver {
                     throw EjbHttpClientMessages.MESSAGES.couldNotResolveRouteForTransactionScopedInvocation(context.getTransaction().toString());
                 }
 
-                HttpStickinessHelper.addEncodedSessionID(request, clientSessionID, route);
-                HttpStickinessHelper.addStrictStickinessHost(request, route);
+                HttpStickinessHelper.addEncodedSessionID(requestContext, clientSessionID, route);
+                HttpStickinessHelper.addStrictStickinessHost(requestContext, route);
             }
         }
 
         @Override
-        public void processResponse(ClientExchange result) throws Exception {
-            EjbHttpClientMessages.MESSAGES.infof("Calling SessionCreationStickinessHandler.processResponse for response %s", result.getResponse());
+        public void processResponse(ResponseContext responseContext) throws Exception {
+            EjbHttpClientMessages.MESSAGES.infof("Calling SessionCreationStickinessHandler.processResponse for response %s", responseContext);
 
             EJBSessionCreationInvocationContext clientInvocationContext = receiverSessionCreationContext.getClientInvocationContext();
             EJBLocator locator = clientInvocationContext.getLocator();
@@ -368,20 +368,18 @@ class HttpEJBReceiver extends EJBReceiver {
 
             EjbHttpClientMessages.MESSAGES.infof("Calling SessionCreationStickinessHandler.processResponse for locator %s", locator);
 
-            ClientResponse response = result.getResponse();
-
-            if (!HttpStickinessHelper.hasEncodedSessionID(response)) {
+            if (!HttpStickinessHelper.hasEncodedSessionID(responseContext)) {
                 throw new Exception("SessionCreationStickinessHandler.processResponse(), SFSB session creation response is missing JSESSIONID Cookie");
             }
 
-            String route = HttpStickinessHelper.updateNode2SessionIDMap(node2SessionId, uri, response);
+            String route = HttpStickinessHelper.updateNode2SessionIDMap(node2SessionId, uri, responseContext);
             EjbHttpClientMessages.MESSAGES.infof("SessionCreationStickinessHandler.processResponse(), route = %s", route);
 
             boolean isSticky = false;
 
-            if (HttpStickinessHelper.hasStrictStickinessResult(response)) {
-                if (!HttpStickinessHelper.getStrictStickinessResult(response)) {
-                    String host = HttpStickinessHelper.getStrictStickinessHost(response);
+            if (HttpStickinessHelper.hasStrictStickinessResult(responseContext)) {
+                if (!HttpStickinessHelper.getStrictStickinessResult(responseContext)) {
+                    String host = HttpStickinessHelper.getStrictStickinessHost(responseContext);
                     assert !host.equals(route);
                     throw new Exception("SessionCreationStickinessHandler.processResponse(): route and host do not match!: route = " + route + ",host = " + host);
                 }
@@ -430,8 +428,8 @@ class HttpEJBReceiver extends EJBReceiver {
         }
 
         @Override
-        public void prepareRequest(ClientRequest request) throws Exception {
-            EjbHttpClientMessages.MESSAGES.infof("Calling InvocationStickinessHandler.prepareRequest for request %s", request);
+        public void prepareRequest(RequestContext requestContext) throws Exception {
+            EjbHttpClientMessages.MESSAGES.infof("Calling InvocationStickinessHandler.prepareRequest for request %s", requestContext);
 
             EJBClientInvocationContext context = receiverInvocationContext.getClientInvocationContext();
             EJBLocator locator = context.getLocator();
@@ -454,8 +452,8 @@ class HttpEJBReceiver extends EJBReceiver {
                 if (route != null) {
                     String nodeSessionID = HttpStickinessHelper.getSessionIDForNode(node2SessionId, uri, route);
                     if (nodeSessionID != null) {
-                        HttpStickinessHelper.addEncodedSessionID(request, nodeSessionID, route);
-                        HttpStickinessHelper.addStrictStickinessHost(request, route);
+                        HttpStickinessHelper.addEncodedSessionID(requestContext, nodeSessionID, route);
+                        HttpStickinessHelper.addStrictStickinessHost(requestContext, route);
                     }
                 }
                 // route == null: first call and no session yet -> send nothing and let the load balancer route
@@ -468,7 +466,7 @@ class HttpEJBReceiver extends EJBReceiver {
 
                         String nodeSessionID = HttpStickinessHelper.getSessionIDForNode(node2SessionId, uri, route);
                         if (nodeSessionID != null) {
-                            HttpStickinessHelper.addEncodedSessionID(request, nodeSessionID, route);
+                            HttpStickinessHelper.addEncodedSessionID(requestContext, nodeSessionID, route);
                         }
                     }
                 } else if (weakAffinity instanceof URIAffinity) {
@@ -476,8 +474,8 @@ class HttpEJBReceiver extends EJBReceiver {
                     if (route != null) {
                         String nodeSessionID = HttpStickinessHelper.getSessionIDForNode(node2SessionId, uri, route);
                         if (nodeSessionID != null) {
-                            HttpStickinessHelper.addEncodedSessionID(request, nodeSessionID, route);
-                            HttpStickinessHelper.addStrictStickinessHost(request, route);
+                            HttpStickinessHelper.addEncodedSessionID(requestContext, nodeSessionID, route);
+                            HttpStickinessHelper.addStrictStickinessHost(requestContext, route);
                         }
                     }
                 }
@@ -485,18 +483,16 @@ class HttpEJBReceiver extends EJBReceiver {
         }
 
         @Override
-        public void processResponse(ClientExchange result) throws Exception {
-            EjbHttpClientMessages.MESSAGES.infof("InvocationStickinessHandler.processResponse for response %s", result.getResponse());
+        public void processResponse(ResponseContext responseContext) throws Exception {
+            EjbHttpClientMessages.MESSAGES.infof("InvocationStickinessHandler.processResponse for response %s", responseContext);
 
             EJBClientInvocationContext context = receiverInvocationContext.getClientInvocationContext();
             EJBLocator locator = context.getLocator();
             URI uri = context.getDestination();
 
-            ClientResponse response = result.getResponse();
-
-            boolean hasSetCookie = HttpStickinessHelper.hasEncodedSessionID(response);
-            boolean hasStrictnessResult = HttpStickinessHelper.hasStrictStickinessResult(response);
-            boolean isSticky = HttpStickinessHelper.getStrictStickinessResult(response);
+            boolean hasSetCookie = HttpStickinessHelper.hasEncodedSessionID(responseContext);
+            boolean hasStrictnessResult = HttpStickinessHelper.hasStrictStickinessResult(responseContext);
+            boolean isSticky = HttpStickinessHelper.getStrictStickinessResult(responseContext);
 
             if (inTransaction(context)) {
                 if (hasStrictnessResult && !isSticky) {
@@ -506,8 +502,8 @@ class HttpEJBReceiver extends EJBReceiver {
                 // resource map (not the leaky proxy-scoped weak affinity). The first response of the transaction
                 // establishes the pin; only subsequent responses are enforced.
                 ConcurrentMap<URI, String> pinMap = getOrCreateTransactionURIMap(context.getTransaction(), TXN_CONFIRMED_STICKINESS_MAP);
-                String actualNode = HttpStickinessHelper.hasStrictStickinessHost(response)
-                        ? HttpStickinessHelper.getStrictStickinessHost(response) : null;
+                String actualNode = HttpStickinessHelper.hasStrictStickinessHost(responseContext)
+                        ? HttpStickinessHelper.getStrictStickinessHost(responseContext) : null;
                 if (actualNode != null) {
                     String pinnedNode = pinMap.putIfAbsent(uri, actualNode);
                     if (pinnedNode != null && !pinnedNode.equals(actualNode)) {
@@ -515,7 +511,7 @@ class HttpEJBReceiver extends EJBReceiver {
                     }
                 }
                 if (hasSetCookie) {
-                    String route = HttpStickinessHelper.updateNode2SessionIDMap(node2SessionId, uri, response);
+                    String route = HttpStickinessHelper.updateNode2SessionIDMap(node2SessionId, uri, responseContext);
                     String sessionId = HttpStickinessHelper.getSessionIDForNode(node2SessionId, uri, route);
                     targetContext.setTransactionStickiness(txStickinessKey, route, sessionId);
                     // If the server did not send a StrictStickinessHost header, fall back to pinning on the cookie route.
@@ -527,7 +523,7 @@ class HttpEJBReceiver extends EJBReceiver {
                 }
             } else if (locator instanceof StatefulEJBLocator) {
                 if (hasSetCookie) {
-                    String route = HttpStickinessHelper.updateNode2SessionIDMap(node2SessionId, uri, response);
+                    String route = HttpStickinessHelper.updateNode2SessionIDMap(node2SessionId, uri, responseContext);
                     if (isSticky) {
                         URIAffinity newAffinity = new URIAffinity(HttpStickinessHelper.createURIAffinityValue(route));
                         context.setWeakAffinity(newAffinity);
@@ -539,7 +535,7 @@ class HttpEJBReceiver extends EJBReceiver {
         }
 
         @Override
-        public void processFailure(Throwable cause) {
+        public void processFailure(ResponseContext ctx, Throwable cause) {
             EJBClientInvocationContext context = receiverInvocationContext.getClientInvocationContext();
             Affinity weakAffinity = context.getWeakAffinity();
             URI uri = context.getDestination();

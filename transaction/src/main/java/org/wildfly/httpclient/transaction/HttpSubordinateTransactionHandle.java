@@ -29,12 +29,12 @@ import static org.wildfly.httpclient.transaction.RequestType.XA_FORGET;
 import static org.wildfly.httpclient.transaction.RequestType.XA_PREPARE;
 import static org.wildfly.httpclient.transaction.RequestType.XA_ROLLBACK;
 
-import io.undertow.client.ClientExchange;
 import io.undertow.client.ClientRequest;
 import org.jboss.marshalling.Marshaller;
 import org.wildfly.httpclient.common.HttpMarshallerFactory;
 import org.wildfly.httpclient.common.HttpStickinessHelper;
 import org.wildfly.httpclient.common.HttpTargetContext;
+import org.wildfly.httpclient.common.HttpTargetContext.RequestContext;
 import org.wildfly.httpclient.common.HttpTargetContext.ResponseContext;
 import org.wildfly.security.auth.client.AuthenticationConfiguration;
 import org.wildfly.transaction.client.spi.SubordinateTransactionControl;
@@ -169,7 +169,7 @@ class HttpSubordinateTransactionHandle implements SubordinateTransactionControl 
         }
 
         @Override
-        public void prepareRequest(ClientRequest request) {
+        public void prepareRequest(RequestContext requestContext) {
             if (targetContext == null) {
                 return;
             }
@@ -177,13 +177,14 @@ class HttpSubordinateTransactionHandle implements SubordinateTransactionControl 
             String route = targetContext.getTransactionStickyRoute(key);
             String sessionId = targetContext.getTransactionStickySessionId(key);
             if (route != null && sessionId != null) {
-                HttpStickinessHelper.addEncodedSessionID(request, sessionId, route);
-                HttpStickinessHelper.addStrictStickinessHost(request, route);
+                HttpStickinessHelper.addEncodedSessionID(requestContext, sessionId, route);
+                HttpStickinessHelper.addStrictStickinessHost(requestContext, route);
             }
         }
 
         @Override
-        public void processResponse(ClientExchange result) {
+        public void processResponse(ResponseContext responseContext) throws XAException {
+            // noop
         }
     }
 }

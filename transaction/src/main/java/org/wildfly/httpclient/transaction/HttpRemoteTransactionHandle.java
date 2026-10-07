@@ -21,12 +21,13 @@ package org.wildfly.httpclient.transaction;
 import static org.wildfly.httpclient.transaction.ClientHandlers.emptyHttpBodyDecoder;
 import static org.wildfly.httpclient.transaction.ClientHandlers.xidHttpBodyEncoder;
 
-import io.undertow.client.ClientExchange;
 import io.undertow.client.ClientRequest;
 import org.jboss.marshalling.Marshaller;
 import org.wildfly.httpclient.common.HttpMarshallerFactory;
 import org.wildfly.httpclient.common.HttpStickinessHelper;
 import org.wildfly.httpclient.common.HttpTargetContext;
+import org.wildfly.httpclient.common.HttpTargetContext.RequestContext;
+import org.wildfly.httpclient.common.HttpTargetContext.ResponseContext;
 import org.wildfly.security.auth.client.AuthenticationConfiguration;
 import org.wildfly.transaction.client.spi.SimpleTransactionControl;
 
@@ -212,11 +213,13 @@ class HttpRemoteTransactionHandle implements SimpleTransactionControl {
 
     public static class RemoteTransactionStickinessHandler implements HttpTargetContext.HttpStickinessHandler {
         @Override
-        public void prepareRequest(ClientRequest request) {
+        public void prepareRequest(RequestContext requestContext) {
+            // noop
         }
 
         @Override
-        public void processResponse(ClientExchange result) {
+        public void processResponse(ResponseContext responseContext) {
+            // noop
         }
     }
 }

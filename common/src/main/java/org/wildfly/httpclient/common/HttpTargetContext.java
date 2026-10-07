@@ -211,7 +211,7 @@ public class HttpTargetContext extends AbstractAttachable {
             final boolean authAdded = retry || connection.getAuthenticationContext().prepareRequest(connection.getUri(), request, authenticationConfiguration);
             if (httpStickinessHandler != null) {
                 try {
-                    httpStickinessHandler.prepareRequest(request);
+                    httpStickinessHandler.prepareRequest(RequestContextImpl.of(OutputStream.nullOutputStream(), request, HttpTargetContext.this.getVersion()));
                 } catch (Exception e) {
                     try {
                         failureHandler.handleFailure(e);
@@ -228,7 +228,10 @@ public class HttpTargetContext extends AbstractAttachable {
                         @Override
                         public void completed(ClientExchange result) {
                             connection.getConnection().getWorker().execute(() -> {
+                                // get the response and its corresponding version
                                 ClientResponse response = result.getResponse();
+                                final Version version = Version.readFrom(result);
+
                                 if (!authAdded || connection.getAuthenticationContext().isStale(result)) {
                                     if (connection.getAuthenticationContext().handleResponse(response)) {
                                         URI uri = connection.getUri();
@@ -278,7 +281,7 @@ public class HttpTargetContext extends AbstractAttachable {
                                     Throwable failure = failureDescription(response);
                                     if (httpStickinessHandler != null) {
                                         try {
-                                            httpStickinessHandler.processFailure(failure);
+                                            httpStickinessHandler.processFailure(ResponseContextImpl.of(InputStream.nullInputStream(), response, version), failure);
                                         } catch (Exception ignored) {
                                         }
                                     }
@@ -303,7 +306,7 @@ public class HttpTargetContext extends AbstractAttachable {
                                             }
                                             if (httpStickinessHandler != null) {
                                                 try {
-                                                    httpStickinessHandler.processFailure(exception);
+                                                    httpStickinessHandler.processFailure(ResponseContextImpl.of(InputStream.nullInputStream(), response, version), exception);
                                                 } catch (Exception ignored) {
                                                 }
                                             }
@@ -313,7 +316,7 @@ public class HttpTargetContext extends AbstractAttachable {
                                         Throwable error = HttpClientMessages.MESSAGES.invalidResponseCode(response.getResponseCode(), response);
                                         if (httpStickinessHandler != null) {
                                             try {
-                                                httpStickinessHandler.processFailure(error);
+                                                httpStickinessHandler.processFailure(ResponseContextImpl.of(InputStream.nullInputStream(), response, version), error);
                                             } catch (Exception ignored) {
                                             }
                                         }
@@ -321,7 +324,7 @@ public class HttpTargetContext extends AbstractAttachable {
                                     } else {
                                         if (httpStickinessHandler != null) {
                                             try {
-                                                httpStickinessHandler.processResponse(result);
+                                                httpStickinessHandler.processResponse(ResponseContextImpl.of(InputStream.nullInputStream(), response, version));
                                             } catch (Exception e) {
                                                 try {
                                                     failureHandler.handleFailure(e);
@@ -334,7 +337,6 @@ public class HttpTargetContext extends AbstractAttachable {
 
                                         if (decoder != null) {
                                             final Closeable doneCallback = completionCallback(completedTask, connection);
-                                            final Version version = Version.readFrom(result);
                                             if (!version.equals(HttpTargetContext.this.getVersion())) {
                                                 throw HttpClientMessages.MESSAGES.versionMismatch();
                                             }
@@ -533,9 +535,9 @@ public class HttpTargetContext extends AbstractAttachable {
     }
 
     public interface HttpStickinessHandler {
-        void prepareRequest(ClientRequest request) throws Exception ;
-        void processResponse(ClientExchange result) throws Exception ;
-        default void processFailure(Throwable cause) {}
+        void prepareRequest(RequestContext ctx) throws Exception ;
+        void processResponse(ResponseContext ctx) throws Exception ;
+        default void processFailure(ResponseContext ctx,Throwable cause) {}
     }
 
     public interface RequestContext {
