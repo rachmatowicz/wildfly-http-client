@@ -140,12 +140,20 @@ public abstract class RequestBuilder<E extends Enum<? extends RequestType>> {
         request.setMethod(((RequestType) requestType).getMethod());
     }
 
+    /**
+     * Returns the HTTP request context path prefix for the current specification version.
+     *
+     * @return the HTTP context path version prefix
+     */
     private String getVersionPath() {
-        final Version.Handler handlerVersion = getVersion().handler();
-        if (handlerVersion == Version.Handler.VERSION_1) return Protocol.VERSION_ONE_PATH;
-        if (handlerVersion == Version.Handler.VERSION_2) return Protocol.VERSION_TWO_PATH;
-        if (handlerVersion == Version.Handler.VERSION_3) return Protocol.VERSION_THREE_PATH;
-        throw new IllegalStateException();
+        final Version.Specification specificationVersion = getVersion().specification();
+        switch (specificationVersion) {
+            case JAVA_EE_8:
+                return Protocol.VERSION_ONE_PATH;
+            case JAKARTA_EE_10:
+                return Protocol.VERSION_TWO_PATH;
+            default:
+                throw new IllegalStateException("Unknown version specification: " + specificationVersion);
+        }
     }
-
 }
