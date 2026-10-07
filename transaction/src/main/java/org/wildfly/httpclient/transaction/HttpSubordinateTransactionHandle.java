@@ -36,6 +36,7 @@ import org.wildfly.httpclient.common.HttpStickinessHelper;
 import org.wildfly.httpclient.common.HttpTargetContext;
 import org.wildfly.httpclient.common.HttpTargetContext.RequestContext;
 import org.wildfly.httpclient.common.HttpTargetContext.ResponseContext;
+import org.wildfly.httpclient.common.Version;
 import org.wildfly.security.auth.client.AuthenticationConfiguration;
 import org.wildfly.transaction.client.spi.SubordinateTransactionControl;
 
@@ -173,13 +174,24 @@ class HttpSubordinateTransactionHandle implements SubordinateTransactionControl 
             if (targetContext == null) {
                 return;
             }
-            String key = HttpStickinessHelper.stickinessKey(xid.getFormatId(), xid.getGlobalTransactionId());
-            String route = targetContext.getTransactionStickyRoute(key);
-            String sessionId = targetContext.getTransactionStickySessionId(key);
-            if (route != null && sessionId != null) {
-                HttpStickinessHelper.addEncodedSessionID(requestContext, sessionId, route);
-                HttpStickinessHelper.addStrictStickinessHost(requestContext, route);
-            }
+
+            // handle stickiness logic by version
+            final Version version = requestContext.getVersion();
+            switch (version.handler()) {
+                case VERSION_1:
+                case VERSION_2:
+                    break;
+                case VERSION_3: {
+                    String key = HttpStickinessHelper.stickinessKey(xid.getFormatId(), xid.getGlobalTransactionId());
+                    String route = targetContext.getTransactionStickyRoute(key);
+                    String sessionId = targetContext.getTransactionStickySessionId(key);
+                    if (route != null && sessionId != null) {
+                        HttpStickinessHelper.addEncodedSessionID(requestContext, sessionId, route);
+                        HttpStickinessHelper.addStrictStickinessHost(requestContext, route);
+                    }
+                }
+                break;
+            } // end switch
         }
 
         @Override

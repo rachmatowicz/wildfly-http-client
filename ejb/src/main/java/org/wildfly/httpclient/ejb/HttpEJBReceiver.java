@@ -55,6 +55,7 @@ import org.wildfly.httpclient.common.HttpStickinessHelper;
 import org.wildfly.httpclient.common.HttpTargetContext;
 import org.wildfly.httpclient.common.HttpTargetContext.RequestContext;
 import org.wildfly.httpclient.common.HttpTargetContext.ResponseContext;
+import org.wildfly.httpclient.common.Version;
 import org.wildfly.httpclient.common.WildflyHttpContext;
 import org.wildfly.httpclient.transaction.XidProvider;
 import org.wildfly.security.auth.client.AuthenticationConfiguration;
@@ -346,16 +347,26 @@ class HttpEJBReceiver extends EJBReceiver {
             EjbHttpClientMessages.MESSAGES.infof("Calling SessionCreationStickinessHandler.prepareRequest for request %s", requestContext);
             EJBSessionCreationInvocationContext context = receiverSessionCreationContext.getClientInvocationContext();
 
-            if (inTransaction(context)) {
-                ConcurrentMap<URI, String> map = getOrCreateTransactionURIMap(context.getTransaction());
-                String route = map.get(context.getDestination());
-                if (route == null) {
-                    throw EjbHttpClientMessages.MESSAGES.couldNotResolveRouteForTransactionScopedInvocation(context.getTransaction().toString());
-                }
+            // handle stickiness logic by version
+            final Version version = requestContext.getVersion();
+            switch (version.handler()) {
+                case VERSION_1:
+                case VERSION_2:
+                    break;
+                case VERSION_3: {
+                    if (inTransaction(context)) {
+                        ConcurrentMap<URI, String> map = getOrCreateTransactionURIMap(context.getTransaction());
+                        String route = map.get(context.getDestination());
+                        if (route == null) {
+                            throw EjbHttpClientMessages.MESSAGES.couldNotResolveRouteForTransactionScopedInvocation(context.getTransaction().toString());
+                        }
 
-                HttpStickinessHelper.addEncodedSessionID(requestContext, clientSessionID, route);
-                HttpStickinessHelper.addStrictStickinessHost(requestContext, route);
-            }
+                        HttpStickinessHelper.addEncodedSessionID(requestContext, clientSessionID, route);
+                        HttpStickinessHelper.addStrictStickinessHost(requestContext, route);
+                    }
+                }
+                break;
+            } // end switch
         }
 
         @Override
@@ -368,45 +379,55 @@ class HttpEJBReceiver extends EJBReceiver {
 
             EjbHttpClientMessages.MESSAGES.infof("Calling SessionCreationStickinessHandler.processResponse for locator %s", locator);
 
-            if (!HttpStickinessHelper.hasEncodedSessionID(responseContext)) {
-                throw new Exception("SessionCreationStickinessHandler.processResponse(), SFSB session creation response is missing JSESSIONID Cookie");
-            }
+            // handle stickiness logic by version
+            final Version version = responseContext.getVersion();
+            switch (version.handler()) {
+                case VERSION_1:
+                case VERSION_2:
+                    break;
+                case VERSION_3: {
+                    if (!HttpStickinessHelper.hasEncodedSessionID(responseContext)) {
+                        throw new Exception("SessionCreationStickinessHandler.processResponse(), SFSB session creation response is missing JSESSIONID Cookie");
+                    }
 
-            String route = HttpStickinessHelper.updateNode2SessionIDMap(node2SessionId, uri, responseContext);
-            EjbHttpClientMessages.MESSAGES.infof("SessionCreationStickinessHandler.processResponse(), route = %s", route);
+                    String route = HttpStickinessHelper.updateNode2SessionIDMap(node2SessionId, uri, responseContext);
+                    EjbHttpClientMessages.MESSAGES.infof("SessionCreationStickinessHandler.processResponse(), route = %s", route);
 
-            boolean isSticky = false;
+                    boolean isSticky = false;
 
-            if (HttpStickinessHelper.hasStrictStickinessResult(responseContext)) {
-                if (!HttpStickinessHelper.getStrictStickinessResult(responseContext)) {
-                    String host = HttpStickinessHelper.getStrictStickinessHost(responseContext);
-                    assert !host.equals(route);
-                    throw new Exception("SessionCreationStickinessHandler.processResponse(): route and host do not match!: route = " + route + ",host = " + host);
+                    if (HttpStickinessHelper.hasStrictStickinessResult(responseContext)) {
+                        if (!HttpStickinessHelper.getStrictStickinessResult(responseContext)) {
+                            String host = HttpStickinessHelper.getStrictStickinessHost(responseContext);
+                            assert !host.equals(route);
+                            throw new Exception("SessionCreationStickinessHandler.processResponse(): route and host do not match!: route = " + route + ",host = " + host);
+                        }
+                        isSticky = true;
+                    }
+
+                    Affinity weakAffinity = null;
+                    if (!inTransaction(clientInvocationContext)) {
+                        if (!isSticky) {
+                            weakAffinity = new NodeAffinity(route);
+                        } else {
+                            weakAffinity = new URIAffinity(HttpStickinessHelper.createURIAffinityValue(route));
+                        }
+                    } else {
+                        if (!isSticky) {
+                            throw new Exception("Session creation response has no strict stickiness header");
+                        }
+                        weakAffinity = new URIAffinity(HttpStickinessHelper.createURIAffinityValue(route));
+                    }
+
+                    if (inTransaction(clientInvocationContext)) {
+                        EjbHttpClientMessages.MESSAGES.infof("SessionCreationStickinessHandler.processResponse() [txn] updating weak affinity to %s", weakAffinity);
+                    } else {
+                        EjbHttpClientMessages.MESSAGES.infof("SessionCreationStickinessHandler.processResponse() [non-txn] updating weak affinity to %s", weakAffinity);
+                    }
+
+                    clientInvocationContext.setWeakAffinity(weakAffinity);
                 }
-                isSticky = true;
-            }
-
-            Affinity weakAffinity = null;
-            if (!inTransaction(clientInvocationContext)) {
-                if (!isSticky) {
-                    weakAffinity = new NodeAffinity(route);
-                } else {
-                    weakAffinity = new URIAffinity(HttpStickinessHelper.createURIAffinityValue(route));
-                }
-            } else {
-                if (!isSticky) {
-                    throw new Exception("Session creation response has no strict stickiness header");
-                }
-                weakAffinity = new URIAffinity(HttpStickinessHelper.createURIAffinityValue(route));
-            }
-
-            if (inTransaction(clientInvocationContext)) {
-                EjbHttpClientMessages.MESSAGES.infof("SessionCreationStickinessHandler.processResponse() [txn] updating weak affinity to %s", weakAffinity);
-            } else {
-                EjbHttpClientMessages.MESSAGES.infof("SessionCreationStickinessHandler.processResponse() [non-txn] updating weak affinity to %s", weakAffinity);
-            }
-
-            clientInvocationContext.setWeakAffinity(weakAffinity);
+                break;
+            } // end switch
         }
     }
 
@@ -436,46 +457,55 @@ class HttpEJBReceiver extends EJBReceiver {
             URI uri = context.getDestination();
             Affinity weakAffinity = context.getWeakAffinity();
 
-            EjbHttpClientMessages.MESSAGES.infof("Calling InvocationStickinessHandler().prepareRequest(), node2sessionID map: %s", node2SessionId);
+            // handle stickiness logic by version
+            final Version version = requestContext.getVersion();
+            switch (version.handler()) {
+                case VERSION_1:
+                case VERSION_2:
+                    break;
+                case VERSION_3: {
+                    EjbHttpClientMessages.MESSAGES.infof("Calling InvocationStickinessHandler().prepareRequest(), node2sessionID map: %s", node2SessionId);
 
-            if (inTransaction(context)) {
-                // The node this transaction is pinned to is stored in a per-transaction resource map, NOT in the
-                // proxy-scoped weak affinity (which is unreliable for SLSBs and leaks across transaction cycles).
-                ConcurrentMap<URI, String> pinMap = getOrCreateTransactionURIMap(context.getTransaction(), TXN_CONFIRMED_STICKINESS_MAP);
-                String route = pinMap.get(uri);
-                // On the first call of the transaction there is no confirmed pin yet. Fall back to the weak affinity
-                // (e.g. a node established during SFSB session creation) so that first call still lands on the
-                // session's node; this is best-effort only and is never enforced.
-                if (route == null && weakAffinity instanceof URIAffinity) {
-                    route = ((URIAffinity) weakAffinity).getUri().getHost();
-                }
-                if (route != null) {
-                    String nodeSessionID = HttpStickinessHelper.getSessionIDForNode(node2SessionId, uri, route);
-                    if (nodeSessionID != null) {
-                        HttpStickinessHelper.addEncodedSessionID(requestContext, nodeSessionID, route);
-                        HttpStickinessHelper.addStrictStickinessHost(requestContext, route);
-                    }
-                }
-                // route == null: first call and no session yet -> send nothing and let the load balancer route
-                // freely; we pin to whichever node answers in processResponse().
-            } else if (locator instanceof StatefulEJBLocator) {
-                if (weakAffinity instanceof NodeAffinity) {
-                    String route = ((NodeAffinity) weakAffinity).getNodeName();
-                    if (route != null) {
-                        EjbHttpClientMessages.MESSAGES.infof("Calling InvocationStickinessHandler.prepareRequest(), node2sessionID map: %s, uri = %s, route = %s", node2SessionId, uri, route);
-
-                        String nodeSessionID = HttpStickinessHelper.getSessionIDForNode(node2SessionId, uri, route);
-                        if (nodeSessionID != null) {
-                            HttpStickinessHelper.addEncodedSessionID(requestContext, nodeSessionID, route);
+                    if (inTransaction(context)) {
+                        // The node this transaction is pinned to is stored in a per-transaction resource map, NOT in the
+                        // proxy-scoped weak affinity (which is unreliable for SLSBs and leaks across transaction cycles).
+                        ConcurrentMap<URI, String> pinMap = getOrCreateTransactionURIMap(context.getTransaction(), TXN_CONFIRMED_STICKINESS_MAP);
+                        String route = pinMap.get(uri);
+                        // On the first call of the transaction there is no confirmed pin yet. Fall back to the weak affinity
+                        // (e.g. a node established during SFSB session creation) so that first call still lands on the
+                        // session's node; this is best-effort only and is never enforced.
+                        if (route == null && weakAffinity instanceof URIAffinity) {
+                            route = ((URIAffinity) weakAffinity).getUri().getHost();
                         }
-                    }
-                } else if (weakAffinity instanceof URIAffinity) {
-                    String route = ((URIAffinity) weakAffinity).getUri().getHost();
-                    if (route != null) {
-                        String nodeSessionID = HttpStickinessHelper.getSessionIDForNode(node2SessionId, uri, route);
-                        if (nodeSessionID != null) {
-                            HttpStickinessHelper.addEncodedSessionID(requestContext, nodeSessionID, route);
-                            HttpStickinessHelper.addStrictStickinessHost(requestContext, route);
+                        if (route != null) {
+                            String nodeSessionID = HttpStickinessHelper.getSessionIDForNode(node2SessionId, uri, route);
+                            if (nodeSessionID != null) {
+                                HttpStickinessHelper.addEncodedSessionID(requestContext, nodeSessionID, route);
+                                HttpStickinessHelper.addStrictStickinessHost(requestContext, route);
+                            }
+                        }
+                        // route == null: first call and no session yet -> send nothing and let the load balancer route
+                        // freely; we pin to whichever node answers in processResponse().
+                    } else if (locator instanceof StatefulEJBLocator) {
+                        if (weakAffinity instanceof NodeAffinity) {
+                            String route = ((NodeAffinity) weakAffinity).getNodeName();
+                            if (route != null) {
+                                EjbHttpClientMessages.MESSAGES.infof("Calling InvocationStickinessHandler.prepareRequest(), node2sessionID map: %s, uri = %s, route = %s", node2SessionId, uri, route);
+
+                                String nodeSessionID = HttpStickinessHelper.getSessionIDForNode(node2SessionId, uri, route);
+                                if (nodeSessionID != null) {
+                                    HttpStickinessHelper.addEncodedSessionID(requestContext, nodeSessionID, route);
+                                }
+                            }
+                        } else if (weakAffinity instanceof URIAffinity) {
+                            String route = ((URIAffinity) weakAffinity).getUri().getHost();
+                            if (route != null) {
+                                String nodeSessionID = HttpStickinessHelper.getSessionIDForNode(node2SessionId, uri, route);
+                                if (nodeSessionID != null) {
+                                    HttpStickinessHelper.addEncodedSessionID(requestContext, nodeSessionID, route);
+                                    HttpStickinessHelper.addStrictStickinessHost(requestContext, route);
+                                }
+                            }
                         }
                     }
                 }
@@ -490,77 +520,94 @@ class HttpEJBReceiver extends EJBReceiver {
             EJBLocator locator = context.getLocator();
             URI uri = context.getDestination();
 
-            boolean hasSetCookie = HttpStickinessHelper.hasEncodedSessionID(responseContext);
-            boolean hasStrictnessResult = HttpStickinessHelper.hasStrictStickinessResult(responseContext);
-            boolean isSticky = HttpStickinessHelper.getStrictStickinessResult(responseContext);
+            // handle stickiness logic by version
+            final Version version = responseContext.getVersion();
+            switch (version.handler()) {
+                case VERSION_1:
+                case VERSION_2:
+                    break;
+                case VERSION_3: {
+                    boolean hasSetCookie = HttpStickinessHelper.hasEncodedSessionID(responseContext);
+                    boolean hasStrictnessResult = HttpStickinessHelper.hasStrictStickinessResult(responseContext);
+                    boolean isSticky = HttpStickinessHelper.getStrictStickinessResult(responseContext);
 
-            if (inTransaction(context)) {
-                if (hasStrictnessResult && !isSticky) {
-                    throw new Exception("Stickiness not respected for transaction-scoped invocation");
-                }
-                // Enforce affinity against the node the transaction was pinned to, sourced from the per-transaction
-                // resource map (not the leaky proxy-scoped weak affinity). The first response of the transaction
-                // establishes the pin; only subsequent responses are enforced.
-                ConcurrentMap<URI, String> pinMap = getOrCreateTransactionURIMap(context.getTransaction(), TXN_CONFIRMED_STICKINESS_MAP);
-                String actualNode = HttpStickinessHelper.hasStrictStickinessHost(responseContext)
-                        ? HttpStickinessHelper.getStrictStickinessHost(responseContext) : null;
-                if (actualNode != null) {
-                    String pinnedNode = pinMap.putIfAbsent(uri, actualNode);
-                    if (pinnedNode != null && !pinnedNode.equals(actualNode)) {
-                        throw new Exception("Transaction affinity violated: expected node " + pinnedNode + " but response came from " + actualNode);
+                    if (inTransaction(context)) {
+                        if (hasStrictnessResult && !isSticky) {
+                            throw new Exception("Stickiness not respected for transaction-scoped invocation");
+                        }
+                        // Enforce affinity against the node the transaction was pinned to, sourced from the per-transaction
+                        // resource map (not the leaky proxy-scoped weak affinity). The first response of the transaction
+                        // establishes the pin; only subsequent responses are enforced.
+                        ConcurrentMap<URI, String> pinMap = getOrCreateTransactionURIMap(context.getTransaction(), TXN_CONFIRMED_STICKINESS_MAP);
+                        String actualNode = HttpStickinessHelper.hasStrictStickinessHost(responseContext)
+                                ? HttpStickinessHelper.getStrictStickinessHost(responseContext) : null;
+                        if (actualNode != null) {
+                            String pinnedNode = pinMap.putIfAbsent(uri, actualNode);
+                            if (pinnedNode != null && !pinnedNode.equals(actualNode)) {
+                                throw new Exception("Transaction affinity violated: expected node " + pinnedNode + " but response came from " + actualNode);
+                            }
+                        }
+                        if (hasSetCookie) {
+                            String route = HttpStickinessHelper.updateNode2SessionIDMap(node2SessionId, uri, responseContext);
+                            String sessionId = HttpStickinessHelper.getSessionIDForNode(node2SessionId, uri, route);
+                            targetContext.setTransactionStickiness(txStickinessKey, route, sessionId);
+                            // If the server did not send a StrictStickinessHost header, fall back to pinning on the cookie route.
+                            if (actualNode == null && route != null) {
+                                pinMap.putIfAbsent(uri, route);
+                            }
+                            URIAffinity newAffinity = new URIAffinity(HttpStickinessHelper.createURIAffinityValue(route));
+                            context.setWeakAffinity(newAffinity);
+                        }
+                    } else if (locator instanceof StatefulEJBLocator) {
+                        if (hasSetCookie) {
+                            String route = HttpStickinessHelper.updateNode2SessionIDMap(node2SessionId, uri, responseContext);
+                            if (isSticky) {
+                                URIAffinity newAffinity = new URIAffinity(HttpStickinessHelper.createURIAffinityValue(route));
+                                context.setWeakAffinity(newAffinity);
+                            } else {
+                                context.setWeakAffinity(new NodeAffinity(route));
+                            }
+                        }
                     }
-                }
-                if (hasSetCookie) {
-                    String route = HttpStickinessHelper.updateNode2SessionIDMap(node2SessionId, uri, responseContext);
-                    String sessionId = HttpStickinessHelper.getSessionIDForNode(node2SessionId, uri, route);
-                    targetContext.setTransactionStickiness(txStickinessKey, route, sessionId);
-                    // If the server did not send a StrictStickinessHost header, fall back to pinning on the cookie route.
-                    if (actualNode == null && route != null) {
-                        pinMap.putIfAbsent(uri, route);
-                    }
-                    URIAffinity newAffinity = new URIAffinity(HttpStickinessHelper.createURIAffinityValue(route));
-                    context.setWeakAffinity(newAffinity);
-                }
-            } else if (locator instanceof StatefulEJBLocator) {
-                if (hasSetCookie) {
-                    String route = HttpStickinessHelper.updateNode2SessionIDMap(node2SessionId, uri, responseContext);
-                    if (isSticky) {
-                        URIAffinity newAffinity = new URIAffinity(HttpStickinessHelper.createURIAffinityValue(route));
-                        context.setWeakAffinity(newAffinity);
-                    } else {
-                        context.setWeakAffinity(new NodeAffinity(route));
-                    }
-                }
-            }
+                }  // end VERSION_3
+            } // end switch
         }
 
         @Override
-        public void processFailure(ResponseContext ctx, Throwable cause) {
+        public void processFailure(ResponseContext responseContext, Throwable cause) {
             EJBClientInvocationContext context = receiverInvocationContext.getClientInvocationContext();
             Affinity weakAffinity = context.getWeakAffinity();
             URI uri = context.getDestination();
 
             EjbHttpClientMessages.MESSAGES.infof("InvocationStickinessHandler.processFailure(), cause: %s, weakAffinity: %s, uri: %s", cause.getMessage(), weakAffinity, uri);
 
-            if (inTransaction(context)) {
-                return;
-            }
+            // handle stickiness logic by version
+            final Version version = responseContext.getVersion();
+            switch (version.handler()) {
+                case VERSION_1:
+                case VERSION_2:
+                case VERSION_3: {
+                    if (inTransaction(context)) {
+                        return;
+                    }
 
-            String route = null;
-            if (weakAffinity instanceof NodeAffinity) {
-                route = ((NodeAffinity) weakAffinity).getNodeName();
-            } else if (weakAffinity instanceof URIAffinity) {
-                route = ((URIAffinity) weakAffinity).getUri().getHost();
-            }
+                    String route = null;
+                    if (weakAffinity instanceof NodeAffinity) {
+                        route = ((NodeAffinity) weakAffinity).getNodeName();
+                    } else if (weakAffinity instanceof URIAffinity) {
+                        route = ((URIAffinity) weakAffinity).getUri().getHost();
+                    }
 
-            if (route != null && uri != null) {
-                ConcurrentMap<String, String> map = node2SessionId.get(uri);
-                if (map != null) {
-                    map.remove(route);
+                    if (route != null && uri != null) {
+                        ConcurrentMap<String, String> map = node2SessionId.get(uri);
+                        if (map != null) {
+                            map.remove(route);
+                        }
+                    }
+                    context.setWeakAffinity(Affinity.NONE);
                 }
-            }
-
-            context.setWeakAffinity(Affinity.NONE);
+                break;
+            } // end switch
         }
     }
 
