@@ -55,6 +55,7 @@ import org.jboss.marshalling.Unmarshaller;
 import org.wildfly.httpclient.common.HttpMarshallerFactory;
 import org.wildfly.httpclient.common.HttpStickinessHelper;
 import org.wildfly.httpclient.common.HttpTargetContext;
+import org.wildfly.httpclient.common.Version;
 import org.wildfly.httpclient.common.WildflyHttpContext;
 import org.wildfly.httpclient.transaction.XidProvider;
 import org.wildfly.security.auth.client.AuthenticationConfiguration;
@@ -335,17 +336,30 @@ class HttpEJBReceiver extends EJBReceiver {
         @Override
         public void prepareRequest(ClientRequest request) throws Exception {
             EjbHttpClientMessages.MESSAGES.infof("Calling SessionCreationStickinessHandler.prepareRequest for request %s", request);
+
             EJBSessionCreationInvocationContext context = receiverSessionCreationContext.getClientInvocationContext();
+            URI uri = context.getDestination();
+            Version version = resolveTargetContext(context, uri).getVersion();
 
-            if (inTransaction(context)) {
-                ConcurrentMap<URI, String> map = getOrCreateTransactionURIMap(context.getTransaction());
-                String route = map.get(context.getDestination());
-                if (route == null) {
-                    throw EjbHttpClientMessages.MESSAGES.couldNotResolveRouteForTransactionScopedInvocation(context.getTransaction().toString());
-                }
+            switch(version.handler()) {
+                case VERSION_1:
+                case VERSION_2:
+                    break;
+                case VERSION_3:
+                    if (inTransaction(context)) {
+                        ConcurrentMap<URI, String> map = getOrCreateTransactionURIMap(context.getTransaction());
+                        String route = map.get(context.getDestination());
+                        if (route == null) {
+                            throw EjbHttpClientMessages.MESSAGES.couldNotResolveRouteForTransactionScopedInvocation(context.getTransaction().toString());
+                        }
 
-                HttpStickinessHelper.addEncodedSessionID(request, clientSessionID, route);
-                HttpStickinessHelper.addStrictStickinessHost(request, route);
+                        HttpStickinessHelper.addEncodedSessionID(request, clientSessionID, route);
+                        HttpStickinessHelper.addStrictStickinessHost(request, route);
+                    }
+                    break;
+                // should not reach here
+                default:
+                    throw new IllegalStateException("Invalid handler version encountered: " + version);
             }
         }
 
@@ -353,53 +367,63 @@ class HttpEJBReceiver extends EJBReceiver {
         public void processResponse(ClientExchange result) throws Exception {
             EjbHttpClientMessages.MESSAGES.infof("Calling SessionCreationStickinessHandler.processResponse for response %s", result.getResponse());
 
-            EJBSessionCreationInvocationContext clientInvocationContext = receiverSessionCreationContext.getClientInvocationContext();
-            EJBLocator locator = clientInvocationContext.getLocator();
-            URI uri = clientInvocationContext.getDestination();
-
-            EjbHttpClientMessages.MESSAGES.infof("Calling SessionCreationStickinessHandler.processResponse for locator %s", locator);
-
+            EJBSessionCreationInvocationContext context = receiverSessionCreationContext.getClientInvocationContext();
+            EJBLocator locator = context.getLocator();
+            URI uri = context.getDestination();
+            Version version = resolveTargetContext(context, uri).getVersion();
             ClientResponse response = result.getResponse();
 
-            if (!HttpStickinessHelper.hasEncodedSessionID(response)) {
-                throw new Exception("SessionCreationStickinessHandler.processResponse(), SFSB session creation response is missing JSESSIONID Cookie");
-            }
+            EjbHttpClientMessages.MESSAGES.infof("Calling SessionCreationStickinessHandler.processResponse for locator %s", locator);
+            switch(version.handler()) {
+                case VERSION_1:
+                case VERSION_2:
+                    break;
+                case VERSION_3:
+                    if (!HttpStickinessHelper.hasEncodedSessionID(response)) {
+                        throw new Exception("SessionCreationStickinessHandler.processResponse(), SFSB session creation response is missing JSESSIONID Cookie");
+                    }
 
-            String route = HttpStickinessHelper.updateNode2SessionIDMap(node2SessionId, uri, response);
-            EjbHttpClientMessages.MESSAGES.infof("SessionCreationStickinessHandler.processResponse(), route = %s", route);
+                    String route = HttpStickinessHelper.updateNode2SessionIDMap(node2SessionId, uri, response);
+                    EjbHttpClientMessages.MESSAGES.infof("SessionCreationStickinessHandler.processResponse(), route = %s", route);
 
-            boolean isSticky = false;
+                    boolean isSticky = false;
 
-            if (HttpStickinessHelper.hasStrictStickinessResult(response)) {
-                if (!HttpStickinessHelper.getStrictStickinessResult(response)) {
-                    String host = HttpStickinessHelper.getStrictStickinessHost(response);
-                    assert !host.equals(route);
-                    throw new Exception("SessionCreationStickinessHandler.processResponse(): route and host do not match!: route = " + route + ",host = " + host);
-                }
-                isSticky = true;
-            }
+                    if (HttpStickinessHelper.hasStrictStickinessResult(response)) {
+                        if (!HttpStickinessHelper.getStrictStickinessResult(response)) {
+                            String host = HttpStickinessHelper.getStrictStickinessHost(response);
+                            assert !host.equals(route);
+                            throw new Exception("SessionCreationStickinessHandler.processResponse(): route and host do not match!: route = " + route + ",host = " + host);
+                        }
+                        isSticky = true;
+                    }
 
-            Affinity weakAffinity = null;
-            if (!inTransaction(clientInvocationContext)) {
-                if (!isSticky) {
-                    weakAffinity = new NodeAffinity(route);
-                } else {
-                    weakAffinity = new URIAffinity(HttpStickinessHelper.createURIAffinityValue(route));
-                }
-            } else {
-                if (!isSticky) {
-                    throw new Exception("Session creation response has no strict stickiness header");
-                }
-                weakAffinity = new URIAffinity(HttpStickinessHelper.createURIAffinityValue(route));
-            }
+                    Affinity weakAffinity = null;
+                    if (!inTransaction(context)) {
+                        if (!isSticky) {
+                            weakAffinity = new NodeAffinity(route);
+                        } else {
+                            weakAffinity = new URIAffinity(HttpStickinessHelper.createURIAffinityValue(route));
+                        }
+                    } else {
+                        if (!isSticky) {
+                            throw new Exception("Session creation response has no strict stickiness header");
+                        }
+                        weakAffinity = new URIAffinity(HttpStickinessHelper.createURIAffinityValue(route));
+                    }
 
-            if (inTransaction(clientInvocationContext)) {
-                EjbHttpClientMessages.MESSAGES.infof("SessionCreationStickinessHandler.processResponse() [txn] updating weak affinity to %s", weakAffinity);
-            } else {
-                EjbHttpClientMessages.MESSAGES.infof("SessionCreationStickinessHandler.processResponse() [non-txn] updating weak affinity to %s", weakAffinity);
-            }
+                    if (inTransaction(context)) {
+                        EjbHttpClientMessages.MESSAGES.infof("SessionCreationStickinessHandler.processResponse() [txn] updating weak affinity to %s", weakAffinity);
+                    } else {
+                        EjbHttpClientMessages.MESSAGES.infof("SessionCreationStickinessHandler.processResponse() [non-txn] updating weak affinity to %s", weakAffinity);
+                    }
 
-            clientInvocationContext.setWeakAffinity(weakAffinity);
+                    context.setWeakAffinity(weakAffinity);
+                    break;
+
+                // should not reach here
+                default:
+                    throw new IllegalStateException("Invalid handler version encountered: " + version);
+            } // end switch
         }
     }
 
@@ -424,38 +448,49 @@ class HttpEJBReceiver extends EJBReceiver {
             EJBLocator locator = context.getLocator();
             URI uri = context.getDestination();
             Affinity weakAffinity = context.getWeakAffinity();
+            Version version = resolveTargetContext(context, uri).getVersion();
 
             EjbHttpClientMessages.MESSAGES.infof("Calling InvocationStickinessHandler().prepareRequest(), node2sessionID map: %s", node2SessionId);
 
-            if (inTransaction(context)) {
-                assert weakAffinity instanceof URIAffinity;
-                String route = ((URIAffinity) weakAffinity).getUri().getHost();
-                assert route != null;
+            switch(version.handler()) {
+                case VERSION_1:
+                case VERSION_2:
+                    break;
+                case VERSION_3:
+                    if (inTransaction(context)) {
+                        assert weakAffinity instanceof URIAffinity;
+                        String route = ((URIAffinity) weakAffinity).getUri().getHost();
+                        assert route != null;
 
-                String nodeSessionID = HttpStickinessHelper.getSessionIDForNode(node2SessionId, uri, route);
-                HttpStickinessHelper.addEncodedSessionID(request, nodeSessionID, route);
-                HttpStickinessHelper.addStrictStickinessHost(request, route);
+                        String nodeSessionID = HttpStickinessHelper.getSessionIDForNode(node2SessionId, uri, route);
+                        HttpStickinessHelper.addEncodedSessionID(request, nodeSessionID, route);
+                        HttpStickinessHelper.addStrictStickinessHost(request, route);
 
-            } else if (locator instanceof StatefulEJBLocator) {
-                if (weakAffinity instanceof NodeAffinity) {
-                    String route = ((NodeAffinity) weakAffinity).getNodeName();
-                    assert route != null;
+                    } else if (locator instanceof StatefulEJBLocator) {
+                        if (weakAffinity instanceof NodeAffinity) {
+                            String route = ((NodeAffinity) weakAffinity).getNodeName();
+                            assert route != null;
 
-                    EjbHttpClientMessages.MESSAGES.infof("Calling InvocationStickinessHandler.prepareRequest(), node2sessionID map: %s, uri = %s, route = %s", node2SessionId, uri, route);
+                            EjbHttpClientMessages.MESSAGES.infof("Calling InvocationStickinessHandler.prepareRequest(), node2sessionID map: %s, uri = %s, route = %s", node2SessionId, uri, route);
 
-                    String nodeSessionID = HttpStickinessHelper.getSessionIDForNode(node2SessionId, uri, route);
-                    HttpStickinessHelper.addEncodedSessionID(request, nodeSessionID, route);
+                            String nodeSessionID = HttpStickinessHelper.getSessionIDForNode(node2SessionId, uri, route);
+                            HttpStickinessHelper.addEncodedSessionID(request, nodeSessionID, route);
 
-                } else if (weakAffinity instanceof URIAffinity) {
-                    String route = ((URIAffinity) weakAffinity).getUri().getHost();
-                    assert route != null;
-                    String nodeSessionID = HttpStickinessHelper.getSessionIDForNode(node2SessionId, uri, route);
-                    HttpStickinessHelper.addEncodedSessionID(request, nodeSessionID, route);
-                    HttpStickinessHelper.addStrictStickinessHost(request, route);
-                } else {
-                    throw new Exception("InvocationStickinessHandler.prepareRequest(): bad weak affinity value!: weak affinity = " + weakAffinity.toString());
-                }
-            }
+                        } else if (weakAffinity instanceof URIAffinity) {
+                            String route = ((URIAffinity) weakAffinity).getUri().getHost();
+                            assert route != null;
+                            String nodeSessionID = HttpStickinessHelper.getSessionIDForNode(node2SessionId, uri, route);
+                            HttpStickinessHelper.addEncodedSessionID(request, nodeSessionID, route);
+                            HttpStickinessHelper.addStrictStickinessHost(request, route);
+                        } else {
+                            throw new Exception("InvocationStickinessHandler.prepareRequest(): bad weak affinity value!: weak affinity = " + weakAffinity.toString());
+                        }
+                    }
+                    break;
+                // should not reach here
+                default:
+                    throw new IllegalStateException("Invalid handler version encountered: " + version);
+             } // end switch
         }
 
         @Override
@@ -466,29 +501,39 @@ class HttpEJBReceiver extends EJBReceiver {
             EJBLocator locator = context.getLocator();
             URI uri = context.getDestination();
             Affinity weakAffinity = context.getWeakAffinity();
+            Version version = resolveTargetContext(context, uri).getVersion();
 
             ClientResponse response = result.getResponse();
 
-            boolean isSticky = HttpStickinessHelper.getStrictStickinessResult(response);
+            switch(version.handler()) {
+                case VERSION_1:
+                case VERSION_2:
+                    break;
+                case VERSION_3:
+                    boolean isSticky = HttpStickinessHelper.getStrictStickinessResult(response);
+                    if (inTransaction(context)) {
+                        if (!isSticky) {
+                            throw new Exception("Stickiness not respected for transaction-scoped invocation");
+                        }
+                    } else if (locator instanceof StatefulEJBLocator) {
+                        boolean hasEncodedSessionID = HttpStickinessHelper.hasEncodedSessionID(response);
+                        if (!hasEncodedSessionID) {
+                            throw new Exception("SFSB response is missing its route");
+                        }
+                        String encodedSessionID = HttpStickinessHelper.getEncodedSessionID(response);
+                        String sessionID = HttpStickinessHelper.extractSessionIDFromEncodedSessionID(encodedSessionID);
+                        String route = HttpStickinessHelper.extractRouteFromEncodedSessionID(encodedSessionID);
+                        EjbHttpClientMessages.MESSAGES.infof("InvocationStickinessHandler.processResponse(), sessionID, sessionID = %s, route = %s", sessionID, route);
 
-            if (inTransaction(context)) {
-                if (!isSticky) {
-                    throw new Exception("Stickiness not respected for transaction-scoped invocation");
-                }
-            } else if (locator instanceof StatefulEJBLocator) {
-                boolean hasEncodedSessionID = HttpStickinessHelper.hasEncodedSessionID(response);
-                if (!hasEncodedSessionID) {
-                    throw new Exception("SFSB response is missing its route");
-                }
-                String encodedSessionID = HttpStickinessHelper.getEncodedSessionID(response);
-                String sessionID = HttpStickinessHelper.extractSessionIDFromEncodedSessionID(encodedSessionID);
-                String route = HttpStickinessHelper.extractRouteFromEncodedSessionID(encodedSessionID);
-                EjbHttpClientMessages.MESSAGES.infof("InvocationStickinessHandler.processResponse(), sessionID, sessionID = %s, route = %s", sessionID, route);
-
-                if (!isSticky) {
-                    context.setWeakAffinity(new NodeAffinity(route));
-                }
-            }
+                        if (!isSticky) {
+                            context.setWeakAffinity(new NodeAffinity(route));
+                        }
+                    }
+                    break;
+                // should not reach here
+                default:
+                    throw new IllegalStateException("Invalid handler version encountered: " + version);
+            } // end switch
         }
     }
 

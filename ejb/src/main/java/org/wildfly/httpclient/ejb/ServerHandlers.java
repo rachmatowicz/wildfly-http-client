@@ -167,6 +167,11 @@ final class ServerHandlers {
 
         @Override
         protected void handleInternal(final HttpServerExchange exchange) throws Exception {
+            EjbHttpClientMessages.MESSAGES.infof("HttpInvocationHandler: running handler version %s to process request", getVersion(exchange));
+
+            // debug
+            HttpStickinessHelper.dumpRequestCookies(exchange);
+            HttpStickinessHelper.dumpRequestHeaders(exchange);
 
             // parse request path
             String relativePath = exchange.getRelativePath();
@@ -196,37 +201,38 @@ final class ServerHandlers {
                 // Process Cookies and Headers for VERSION_1,2 handlers
                 // make the session affinity value available for cancellation, if it exists
                 case VERSION_1:
-                case VERSION_2: {
+                case VERSION_2:
                     // get the HTTP sessionID , if any
                     Cookie cookie = exchange.getRequestCookie(JSESSIONID_COOKIE_NAME);
                     encodedHTTPSessionID = cookie != null ? cookie.getValue() : null;
-
                     break;
-                }
+
                 // Process Cookies and Headers for VERSION_3 handlers
                 // NOTE: we do not know what the bean type is at this stage, so we cannot process conditional on SLSB or SFSB
                 // - get the HTTP sessionAffinity value available for cancellation, if any
                 // - check for STRICT_STICKINESS_NODE to see if stickiness is required and throw an exception if we have failec
-                case VERSION_3: {
+                case VERSION_3:
+                    // get the HTTP sessionID, if any
                     if (HttpStickinessHelper.hasEncodedSessionID(exchange)) {
                         encodedHTTPSessionID = HttpStickinessHelper.getEncodedSessionID(exchange);
                     }
 
-                    // this will be automatically available on Wildfly but has to be configured on the test server
+                    // validate strict stickiness, if any
                     String actualHost = System.getProperty("jboss.node.name");
                     String intendedHost = null;
                     if (HttpStickinessHelper.hasStrictStickinessHost(exchange)) {
                         intendedHost = HttpStickinessHelper.getStrictStickinessHost(exchange);
                     }
                     if (intendedHost != null && !intendedHost.equals(actualHost)) {
+                        // TODO: need to set status to NO_CONTENT?
                         exchange.setStatusCode(io.undertow.util.StatusCodes.OK);
                         HttpStickinessHelper.addStrictStickinessResult(exchange, "failed");
                         HttpStickinessHelper.addStrictStickinessHost(exchange, intendedHost);
-                        EjbHttpClientMessages.MESSAGES.infof("Failover attempted on invocation with strict stickiness: intended node %s, actual node %s", intendedHost, actualHost);
+                        EjbHttpClientMessages.MESSAGES.infof("Failover attempted on invocation with strict stickiness: intended node %s, actual node %s",
+                                intendedHost, actualHost);
                         return;
                     }
                     break;
-                }
                 // should not reach here
                 default:
                     throw new IllegalStateException("Invalid handler version encountered: " + version);
@@ -241,8 +247,12 @@ final class ServerHandlers {
             final String sessionAffinity = httpSessionID;
             final EJBIdentifier ejbIdentifier = new EJBIdentifier(app, module, bean, distinct);
 
+            EjbHttpClientMessages.MESSAGES.infof("HttpInvocationHandler: Received invocation for bean %s with encodedHTTPSessionID = %s",
+                    ejbIdentifier, encodedHTTPSessionID);
+
             final String cancellationId = getRequestHeader(exchange, Constants.INVOCATION_ID);
             final InvocationIdentifier identifier;
+            // cancellation only supported for requests having an HTTP sessionID (why?)
             if(cancellationId != null && sessionAffinity != null) {
                 identifier = new InvocationIdentifier(cancellationId, sessionAffinity);
             } else {
@@ -490,13 +500,13 @@ final class ServerHandlers {
 
             @Override
             public void writeInvocationResult(final Object result) {
+                // the invocation is completing, so no future opportunity to cancel
                 if (identifier != null) cancellationFlags.remove(identifier);
 
                 try {
                     // process reponse Cookies and Headers
                     Version version = getVersion(exchange);
                     switch(version.handler()) {
-                        // process Cookies and Headers for VERSION_1,2
                         case VERSION_1:
                         case VERSION_2: {
                             // noop
@@ -508,10 +518,10 @@ final class ServerHandlers {
                         //   - add a stickiness header
                         // - SFSB requests:
                         //   - add a Cookie with the server sessionID + route
-                        //   - add a stickiness header of the bean not replicated (i.e. of strong affinity not instanceof)
+                        //   - add a stickiness header of the bean not replicated (i.e. of strong affinity not instanceof NodeAffinity)
                         // - SLSB which have ClusterAffinity
-                        //   - need to send back updated strong affinity
-                        case VERSION_3: {
+                        //   - need to send back updated strong affinity?
+                        case VERSION_3:
                             // the jboss.node.name is used as a route (appended automatically) by HttpInvokerHostService
                             // the same route needs to be used for the stickiness node
                             final String node = System.getProperty("jboss.node.name", "localhost");
@@ -532,9 +542,12 @@ final class ServerHandlers {
 
                                 // add a Cookie for the load balancer, no Cookie attributes required
                                 HttpStickinessHelper.addUnencodedSessionID(exchange, sessionAffinity);
-                                // add strict stickiness header if non-replicated (strongfinity == NodeAffinity)
-                                HttpStickinessHelper.addStrictStickinessHost(exchange, node);
-                                HttpStickinessHelper.addStrictStickinessResult(exchange, "success");
+
+                                // add strict stickiness header if non-replicated (strongAffinity == NodeAffinity)
+                                if (getStrongAffinity() instanceof NodeAffinity) {
+                                    HttpStickinessHelper.addStrictStickinessHost(exchange, node);
+                                    HttpStickinessHelper.addStrictStickinessResult(exchange, "success");
+                                }
                             } else if (getEJBLocator() instanceof StatefulEJBLocator) {
                                 assert sessionAffinity == null : "SLSB invocations must not have session affiniy";
 
@@ -542,13 +555,16 @@ final class ServerHandlers {
                                     // how to return an updated stroing affinity value
                                 }
                             }
-                        }
-                        break;
+                            break;
+                        // should not reach here
+                        default:
+                            throw new IllegalStateException("Invalid handler version encountered: " + version);
                     }
 
                     // set the content type
                     putResponseHeader(exchange, CONTENT_TYPE, Constants.EJB_RESPONSE);
 
+                    // marshal the response payload
                     final OutputStream os = exchange.getOutputStream();
                     try (ByteOutput out = byteOutputOf(os)) {
                         marshaller.start(out);
@@ -666,6 +682,10 @@ final class ServerHandlers {
         @Override
         protected void handleInternal(HttpServerExchange exchange) throws Exception {
 
+            // debug
+            HttpStickinessHelper.dumpRequestCookies(exchange);
+            HttpStickinessHelper.dumpRequestHeaders(exchange);
+
             // parse request path
             String relativePath = exchange.getRelativePath();
             if(relativePath.startsWith("/")) {
@@ -699,6 +719,9 @@ final class ServerHandlers {
                 case VERSION_3:
                     assert !HttpStickinessHelper.hasEncodedSessionID(exchange) : "incoming session open request has unexpected Cookie";
                     break;
+                // should not reach here
+                default:
+                    throw new IllegalStateException("Invalid handler version encountered: " + version);
             }
 
             final EJBIdentifier ejbIdentifier = new EJBIdentifier(app, module, bean, distinct);
@@ -847,12 +870,16 @@ final class ServerHandlers {
                                 // add a Cookie for the load balancer, no Cookie attributes required as this will not be read by a browser
                                 // the correct route will be appended by the Host (see HttpInvokerHostService)
                                 HttpStickinessHelper.addUnencodedSessionID(exchange, serverSessionID);
-                                // add strict stickiness header if required (i.e. when session state os not replicated or we are in a transaction)
+                                // add strict stickiness header if required (i.e. when session state is not replicated or we are in a transaction)
                                 if (strongAffinity instanceof NodeAffinity || hasTransaction()) {
                                     HttpStickinessHelper.addStrictStickinessHost(exchange, node);
                                     HttpStickinessHelper.addStrictStickinessResult(exchange, "success");
                                 }
                                 break;
+                            // should not reach here
+                            default:
+                                throw new IllegalStateException("Invalid handler version encountered: " + version);
+
                         }
 
                         putResponseHeader(exchange, CONTENT_TYPE, EJB_RESPONSE_NEW_SESSION);
