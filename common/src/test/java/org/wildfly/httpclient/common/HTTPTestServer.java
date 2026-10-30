@@ -389,8 +389,9 @@ public class HTTPTestServer extends BlockJUnit4ClassRunner {
             exchange.addResponseCommitListener(ex -> {
                 Cookie cookie = ex.getResponseCookies().get(JSESSIONID);
                 if (cookie != null) {
-                    // skip encoding if a route is already present
-                    if (routingSupport.parse(cookie.getValue()).getValue() != null) return;
+                    // skip encoding if a route is already present (new ?)
+                    // if (routingSupport.parse(cookie.getValue()).getValue() != null) return;
+                    // NOTE: this should not be the case as route is appended by HttpHostInvokerService
                     CharSequence encodeSessionID = routingSupport.format(cookie.getValue(), ROUTE);
                     cookie.setValue(encodeSessionID.toString());
                     HttpClientMessages.MESSAGES.infof("Adding route %s to unencoded JSESSIONID", ROUTE);

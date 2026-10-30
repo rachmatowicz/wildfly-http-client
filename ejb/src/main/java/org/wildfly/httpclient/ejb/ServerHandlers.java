@@ -51,6 +51,7 @@ import jakarta.ejb.NoSuchEJBException;
 import jakarta.transaction.SystemException;
 import jakarta.transaction.Transaction;
 import org.jboss.ejb.client.Affinity;
+import org.jboss.ejb.client.ClusterAffinity;
 import org.jboss.ejb.client.EJBClient;
 import org.jboss.ejb.client.EJBIdentifier;
 import org.jboss.ejb.client.EJBHomeLocator;
@@ -188,7 +189,7 @@ final class ServerHandlers {
             String[] parameterTypeNames = new String[parts.length - 7];
             System.arraycopy(parts, 7, parameterTypeNames, 0, parameterTypeNames.length);
 
-            // process Cookies and Headers
+            // process request Cookies and Headers
             String encodedHTTPSessionID = null;
             Version version = getVersion(exchange);
             switch (version.handler()) {
@@ -492,7 +493,7 @@ final class ServerHandlers {
                 if (identifier != null) cancellationFlags.remove(identifier);
 
                 try {
-                    // process Cookies and Headers
+                    // process reponse Cookies and Headers
                     Version version = getVersion(exchange);
                     switch(version.handler()) {
                         // process Cookies and Headers for VERSION_1,2
@@ -516,26 +517,33 @@ final class ServerHandlers {
                             final String node = System.getProperty("jboss.node.name", "localhost");
 
                             if (hasTransaction()) {
-                                if (sessionAffinity != null) {
-                                    HttpStickinessHelper.addEncodedSessionID(exchange, sessionAffinity, node);
-                                } else {
-                                    String newSessionId = sessionIdGenerator.createSessionId();
-                                    HttpStickinessHelper.addEncodedSessionID(exchange, newSessionId, node);
-                                }
+                                // assert sessionAffinity != null
+
+                                // add a Cookie for the load balancer, no Cookie attributes required as this will not
+                                // be read by a browser
+                                HttpStickinessHelper.addUnencodedSessionID(exchange, sessionAffinity);
+
+                                // all transactional requests are sticky
                                 HttpStickinessHelper.addStrictStickinessHost(exchange, node);
                                 HttpStickinessHelper.addStrictStickinessResult(exchange, "success");
 
                             } else if (getEJBLocator() instanceof StatefulEJBLocator) {
-                                if (sessionAffinity != null) {
-                                    HttpStickinessHelper.addEncodedSessionID(exchange, sessionAffinity, node);
-                                } else {
-                                    String newSessionId = sessionIdGenerator.createSessionId();
-                                    HttpStickinessHelper.addEncodedSessionID(exchange, newSessionId, node);
-                                }
+                                // assert sessionAffinity != null : "SFSB invocations must have session affinity"
+
+                                // add a Cookie for the load balancer, no Cookie attributes required
+                                HttpStickinessHelper.addUnencodedSessionID(exchange, sessionAffinity);
+                                // add strict stickiness header if non-replicated (strongfinity == NodeAffinity)
                                 HttpStickinessHelper.addStrictStickinessHost(exchange, node);
                                 HttpStickinessHelper.addStrictStickinessResult(exchange, "success");
+                            } else if (getEJBLocator() instanceof StatefulEJBLocator) {
+                                assert sessionAffinity == null : "SLSB invocations must not have session affiniy";
+
+                                if (getStrongAffinity() instanceof ClusterAffinity) {
+                                    // how to return an updated stroing affinity value
+                                }
                             }
                         }
+                        break;
                     }
 
                     // set the content type
@@ -673,7 +681,7 @@ final class ServerHandlers {
             final String distinct = handleDash(parts[2]);
             final String bean = parts[3];
 
-            // process Cookies and Headers
+            // process request Cookies and Headers
             Version version = getVersion(exchange);
             switch (version.handler()) {
                 // Process Cookies and Headers for VERSION_1, 2 handlers
@@ -813,8 +821,9 @@ final class ServerHandlers {
 
                     @Override
                     public void convertToStateful(@NotNull SessionID sessionId) throws IllegalArgumentException, IllegalStateException {
+
                         Version version = getVersion(exchange);
-                        // process Cookies and Headers
+                        // process response Cookies and Headers
                         switch(version.handler()) {
                             // process Cookies and Headers for VERSION_1, 2
                             // - ensure that every session open request has a Cookie tied to this node
