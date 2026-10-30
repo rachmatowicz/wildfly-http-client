@@ -96,6 +96,8 @@ public class HttpTargetContext extends AbstractAttachable {
 
     private static final String JSESSIONID = "JSESSIONID";
 
+    private static final HttpString BACKEND = new HttpString("Backend");
+
     private final HttpConnectionPool connectionPool;
     private final boolean eagerlyAcquireAffinity;
     private volatile CountDownLatch sessionAffinityLatch = new CountDownLatch(1);
@@ -186,16 +188,21 @@ public class HttpTargetContext extends AbstractAttachable {
         sendRequest(clientRequest, sslContext, authenticationConfiguration,
                 null,
                 (ctx) -> {
-                    String backend = ctx.getResponseHeader("Backend");
-                    if (backend == null) {
-                        result.completeExceptionally(HttpClientMessages.MESSAGES.failedToAcquireBackendServer(new Exception("Missing backend header on response")));
-                        return;
-                    }
+                    final InputStream in = ctx.getResponseBody();
                     try {
-                        URI backendURI = new URI(backend);
-                        result.complete(backendURI);
-                    } catch (URISyntaxException use) {
-                        result.completeExceptionally(HttpClientMessages.MESSAGES.failedToAcquireBackendServer(use));
+                        String backend = ctx.getResponseHeader(BACKEND);
+                        if (backend == null) {
+                            result.completeExceptionally(HttpClientMessages.MESSAGES.failedToAcquireBackendServer(new Exception("Missing backend header on response")));
+                            return;
+                        }
+                        try {
+                            URI backendURI = new URI(backend);
+                            result.complete(backendURI);
+                        } catch (URISyntaxException use) {
+                            result.completeExceptionally(HttpClientMessages.MESSAGES.failedToAcquireBackendServer(use));
+                        }
+                    } finally {
+                        safeClose(in); // drain input, which returns the connection to the pool
                     }
                 },
                 result::completeExceptionally, null, null);

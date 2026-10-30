@@ -61,7 +61,11 @@ public class SimpleInvocationTestCase {
     @Before
     public void before() {
         EJBTestServer.registerServicesHandler("common/v1/affinity", exchange -> putResponseHeader(exchange, SET_COOKIE, "JSESSIONID=" + EJBTestServer.INITIAL_SESSION_AFFINITY));
-        EJBTestServer.registerServicesHandler("common/v1/backend", exchange -> putResponseHeader(exchange, new HttpString("Backend"), EJBTestServer.getDefaultServerURL() + "?node=localhost"));
+        EJBTestServer.registerServicesHandler("common/v1/backend", exchange -> {
+            putResponseHeader(exchange, new HttpString("x-wf-version"), "2");
+            putResponseHeader(exchange, new HttpString("Backend"), EJBTestServer.getDefaultServerURL() + "?node=localhost");
+                });
+
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < 10000; ++i) {
             sb.append("Hello World ");

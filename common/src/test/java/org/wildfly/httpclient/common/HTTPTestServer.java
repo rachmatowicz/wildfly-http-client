@@ -26,12 +26,17 @@ import io.undertow.security.handlers.AuthenticationCallHandler;
 import io.undertow.security.idm.Account;
 import io.undertow.server.DefaultByteBufferPool;
 import io.undertow.server.HttpHandler;
+import io.undertow.server.HttpServerExchange;
 import io.undertow.server.handlers.BlockingHandler;
 import io.undertow.server.handlers.CanonicalPathHandler;
+import io.undertow.server.handlers.Cookie;
+import io.undertow.server.handlers.CookieImpl;
 import io.undertow.server.handlers.PathHandler;
 import io.undertow.server.handlers.RequestDumpingHandler;
 import io.undertow.server.handlers.error.SimpleErrorPageHandler;
+import io.undertow.server.session.SecureRandomSessionIdGenerator;
 import io.undertow.util.NetworkUtils;
+import io.undertow.util.StatusCodes;
 import org.junit.runner.Description;
 import org.junit.runner.Result;
 import org.junit.runner.notification.RunListener;
@@ -359,43 +364,4 @@ public class HTTPTestServer extends BlockJUnit4ClassRunner {
             return Collections.emptySet();
         }
     }
-<<<<<<< HEAD
-=======
-
-    /**
-     * Add a response commit listener to modify the response to do the following:
-     * - add in a JSESSIONID cookie to the response when the response:
-     * (1) has no JSESSIONID cookie and
-     * (2) we are in an authentication response-regenerate request cycle
-     * This allows the regenerated request to get back to the same backend node.
-     */
-    private class DummyRouteHandler implements HttpHandler {
-        private volatile HttpHandler next;
-        private final RoutingSupport routingSupport = new SimpleRoutingSupport();
-        private final SecureRandomSessionIdGenerator generator = new SecureRandomSessionIdGenerator();
-
-        public DummyRouteHandler(HttpHandler next) {
-            this.next = next;
-        }
-
-        @Override
-        public void handleRequest(HttpServerExchange exchange) throws Exception {
-            exchange.addResponseCommitListener(ex -> {
-                Cookie cookie = ex.getResponseCookies().get(JSESSIONID);
-                if (cookie != null) {
-                    // skip encoding if a route is already present
-                    if (routingSupport.parse(cookie.getValue()).getValue() != null) return;
-                    CharSequence encodeSessionID = routingSupport.format(cookie.getValue(), ROUTE);
-                    cookie.setValue(encodeSessionID.toString());
-                } else if (ex.getStatusCode() == StatusCodes.UNAUTHORIZED) {
-                    CharSequence encodedSessionID = routingSupport.format(generator.createSessionId(), ROUTE);
-                    cookie = new CookieImpl(JSESSIONID, encodedSessionID.toString());
-                    cookie.setPath(ex.getResolvedPath());
-                    exchange.getResponseCookies().put(JSESSIONID, cookie);
-                }
-            });
-            next.handleRequest(exchange);
-        }
-    }
->>>>>>> 1923a6a0 (Add RequestDumpingHandler)
 }
